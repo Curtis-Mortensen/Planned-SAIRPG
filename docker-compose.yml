@@ -1,0 +1,230 @@
+# ============================================
+# AI D&D Simulation Engine - Database Services
+# ============================================
+#
+# This docker-compose file sets up:
+# - PostgreSQL (durable storage, event store)
+# - Redis (message queue, ephemeral state)
+#
+# Usage:
+#   docker-compose up -d        # Start services
+#   docker-compose down         # Stop services
+#   docker-compose down -v      # Stop and delete data
+#
+# The init scripts run automatically on first start.
+# ============================================
+
+version: '3.8'
+
+services:
+  # ==========================================
+  # PostgreSQL - Event Store & Durable Data
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: sairpg-postgres
+    restart: unless-stopped
+    
+    environment:
+      POSTGRES_USER: sairpg
+      POSTGRES_PASSWORD: sairpg_dev_password  # Change in production!
+      POSTGRES_DB: sairpg
+    
+    ports:
+      - "5432:5432"
+    
+    volumes:
+      # Persist data between restarts
+      - postgres_data:/var/lib/postgresql/data
+      
+      # Init scripts run in alphabetical order on first start
+      # 00-core.sql: System tables (sessions, events, ticks, branches)
+      # 01-combined-agents.sql: All agent tables (generated)
+      - ./init:/docker-entrypoint-initdb.d:ro
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sairpg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # Redis - Message Queue & Ephemeral State
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: sairpg-redis
+    restart: unless-stopped
+    
+    ports:
+      - "6379:6379"
+    
+    volumes:
+      # Persist Redis data (optional, can remove for true ephemeral)
+      - redis_data:/data
+    
+    # Enable append-only file for durability
+    command: redis-server --appendonly yes
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # Adminer - Database UI (Development Only)
+  # ==========================================
+  adminer:
+    image: adminer:latest
+    container_name: sairpg-adminer
+    restart: unless-stopped
+    
+    ports:
+      - "8080:8080"
+    
+    depends_on:
+      - postgres
+    
+    # Remove this service in production
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+    name: sairpg-postgres-data
+  redis_data:
+    name: sairpg-redis-data
+
+# ============================================
+# DATABASE SCHEMA OVERVIEW
+# ============================================
+#
+# The following tables are created by the init scripts.
+# Each table lists its source file.
+#
+# ============================================
+# CORE SYSTEM TABLES (00-core.sql)
+# ============================================
+#
+# sessions
+#   - Game sessions (one per playthrough)
+#   - Fields: session_id, session_name, created_at, world_name
+#
+# branches
+#   - Timeline branches for editability
+#   - Main timeline has parent_branch = NULL
+#   - Edits create new branches that fork from a tick
+#   - Fields: branch_id, session_id, parent_branch_id, fork_tick_id
+#
+# ticks
+#   - One cycle of the game loop
+#   - Fields: tick_id, session_id, branch_id, tick_number, status, world_time
+#
+# events
+#   - Immutable event log (source of truth)
+#   - All state changes are events
+#   - Fields: event_id, tick_id, branch_id, event_type, agent_id, payload
+#
+# agent_registry
+#   - Registered agents and their settings schemas
+#   - Populated by each agent's SQL file
+#
+# agent_settings
+#   - Current setting values per session per agent
+#
+# ============================================
+# PHASE 1 TABLES
+# ============================================
+#
+# evaluated_actions (action-evaluator.sql)
+#   - Player action interpretations
+#   - Fields: raw_input, interpreted_action, difficulty, difficulty_score
+#
+# probability_rolls (probability-roll.sql)
+#   - All dice rolls for transparency
+#   - Fields: roll_value, difficulty_score, outcome, margin
+#
+# narrative_segments (narrator.sql)
+#   - Generated story text
+#   - Supports player editing (version, is_player_edited)
+#   - Fields: narrative_text, narrates_action, narrates_outcome
+#
+# game_saves (save-load.sql)
+#   - Manual and auto-saves
+#   - Fields: save_name, save_type, world_state_snapshot
+#
+# world_snapshots (save-load.sql)
+#   - Periodic full state captures for fast loading
+#   - Fields: snapshot_data, tick_number
+#
+# ============================================
+# PHASE 2 TABLES
+# ============================================
+#
+# meta_event_templates (meta-event-generator.sql)
+#   - Library of possible world events
+#   - Fields: event_name, category, base_probability, rarity
+#
+# proposed_events (meta-event-generator.sql)
+#   - Events proposed for a specific tick
+#   - Fields: event_name, calculated_probability, status
+#
+# approval_decisions (player-approval.sql)
+#   - History of player approvals/rejections
+#   - Fields: decision, rejection_reason
+#
+# approval_stats (player-approval.sql)
+#   - Aggregate stats for tuning event generation
+#   - Fields: total_proposed, total_approved, etc.
+#
+# ============================================
+# PHASE 3 TABLES
+# ============================================
+#
+# narrative_outlines (outline-generator.sql)
+#   - Structured narrative with beats and branches
+#   - Fields: outline_structure (JSONB), active_npc_ids
+#
+# locations (outline-generator.sql)
+#   - Discovered locations in the world
+#   - Fields: location_name, location_type, connections
+#
+# npcs (npc-decision-maker.sql)
+#   - NPC identity (stable traits)
+#   - Fields: npc_name, personality (JSONB), backstory
+#
+# npc_state (npc-decision-maker.sql)
+#   - NPC dynamic state (changes per tick)
+#   - Fields: location_id, active_goals, player_relationship
+#
+# npc_decisions (npc-decision-maker.sql)
+#   - Decisions made by NPCs during simulation
+#   - Fields: decision_type, decision_description, affects_npcs
+#
+# ============================================
+# EDITABILITY: HOW ROLLBACK WORKS
+# ============================================
+#
+# 1. Player clicks "Edit" on a past narrative segment
+#
+# 2. System calls create_branch_from_edit(session_id, tick_id)
+#    - Creates new branch with parent = current branch
+#    - Sets fork_tick_id to the tick being edited
+#    - Marks new branch as active
+#
+# 3. Player makes their edit
+#    - New event added to events table with new branch_id
+#    - narrative_segments updated (version incremented, original preserved)
+#
+# 4. System replays from fork point
+#    - For each tick after fork: re-run affected agents
+#    - New events added to new branch
+#    - Original branch preserved (can switch back)
+#
+# 5. Player can switch between branches via UI
+#    - "Main Timeline" vs "Edit: changed combat outcome"
+#    - Each branch has complete, independent history
+#
+# ============================================
+
