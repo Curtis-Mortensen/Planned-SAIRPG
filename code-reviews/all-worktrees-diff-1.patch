@@ -1,0 +1,1627 @@
+# Combined Diff of All Git Worktrees
+# Generated on: Mon Jan  5 23:32:20 MST 2026
+
+
+========================================
+Worktree: bdf
+========================================
+
+diff --git a/app/layout.tsx b/app/layout.tsx
+index 66db5da..3dce5b3 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -6,10 +6,12 @@ import { ThemeProvider } from "@/components/theme-provider";
+ import "./globals.css";
+ import { SessionProvider } from "next-auth/react";
+ 
++import { AppShell } from "@/components/layout/app-shell";
++
+ export const metadata: Metadata = {
+   metadataBase: new URL("https://chat.vercel.ai"),
+-  title: "Next.js Chatbot Template",
+-  description: "Next.js chatbot template using the AI SDK.",
++  title: "SAIRPG",
++  description: "LLM-based simulation game.",
+ };
+ 
+ export const viewport = {
+@@ -79,7 +81,9 @@ export default function RootLayout({
+           enableSystem
+         >
+           <Toaster position="top-center" />
+-          <SessionProvider>{children}</SessionProvider>
++          <SessionProvider>
++            <AppShell>{children}</AppShell>
++          </SessionProvider>
+         </ThemeProvider>
+       </body>
+     </html>
+diff --git a/app/editor/page.tsx b/app/editor/page.tsx
+new file mode 100644
+index 0000000..e38f290
+--- /dev/null
++++ b/app/editor/page.tsx
+@@ -0,0 +1,9 @@
++export default function EditorPage() {
++  return (
++    <div className="flex flex-col items-center justify-center h-full">
++      <h1 className="text-2xl font-bold">World Editor</h1>
++      <p className="text-muted-foreground">Behind-the-scenes module configuration coming soon.</p>
++    </div>
++  );
++}
++
+
+diff --git a/app/log/page.tsx b/app/log/page.tsx
+new file mode 100644
+index 0000000..500509d
+--- /dev/null
++++ b/app/log/page.tsx
+@@ -0,0 +1,9 @@
++export default function LogPage() {
++  return (
++    <div className="flex flex-col items-center justify-center h-full">
++      <h1 className="text-2xl font-bold">Event Log</h1>
++      <p className="text-muted-foreground">Full message history and module communications coming soon.</p>
++    </div>
++  );
++}
++
+
+diff --git a/app/play/[id]/page.tsx b/app/play/[id]/page.tsx
+new file mode 100644
+index 0000000..70618b8
+--- /dev/null
++++ b/app/play/[id]/page.tsx
+@@ -0,0 +1,83 @@
++import { cookies } from "next/headers";
++import { notFound, redirect } from "next/navigation";
++import { Suspense } from "react";
++
++import { auth } from "@/app/(auth)/auth";
++import { Chat } from "@/components/chat";
++import { DataStreamHandler } from "@/components/data-stream-handler";
++import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
++import { getChatById, getMessagesByChatId } from "@/lib/db/queries";
++import { convertToUIMessages } from "@/lib/utils";
++
++export default function Page(props: { params: Promise<{ id: string }> }) {
++  return (
++    <Suspense fallback={<div className="flex h-dvh" />}>
++      <ChatPage params={props.params} />
++    </Suspense>
++  );
++}
++
++async function ChatPage({ params }: { params: Promise<{ id: string }> }) {
++  const { id } = await params;
++  const chat = await getChatById({ id });
++
++  if (!chat) {
++    redirect("/play");
++  }
++
++  const session = await auth();
++
++  if (!session) {
++    redirect("/api/auth/guest");
++  }
++
++  if (chat.visibility === "private") {
++    if (!session.user) {
++      return notFound();
++    }
++
++    if (session.user.id !== chat.userId) {
++      return notFound();
++    }
++  }
++
++  const messagesFromDb = await getMessagesByChatId({
++    id,
++  });
++
++  const uiMessages = convertToUIMessages(messagesFromDb);
++
++  const cookieStore = await cookies();
++  const chatModelFromCookie = cookieStore.get("chat-model");
++
++  if (!chatModelFromCookie) {
++    return (
++      <>
++        <Chat
++          autoResume={true}
++          id={chat.id}
++          initialChatModel={DEFAULT_CHAT_MODEL}
++          initialMessages={uiMessages}
++          initialVisibilityType={chat.visibility}
++          isReadonly={session?.user?.id !== chat.userId}
++        />
++        <DataStreamHandler />
++      </>
++    );
++  }
++
++  return (
++    <>
++      <Chat
++        autoResume={true}
++        id={chat.id}
++        initialChatModel={chatModelFromCookie.value}
++        initialMessages={uiMessages}
++        initialVisibilityType={chat.visibility}
++        isReadonly={session?.user?.id !== chat.userId}
++      />
++      <DataStreamHandler />
++    </>
++  );
++}
++
+
+diff --git a/app/play/layout.tsx b/app/play/layout.tsx
+new file mode 100644
+index 0000000..3172e37
+--- /dev/null
++++ b/app/play/layout.tsx
+@@ -0,0 +1,17 @@
++import { DataStreamProvider } from "@/components/data-stream-provider";
++import Script from "next/script";
++
++export default function PlayLayout({ children }: { children: React.ReactNode }) {
++  return (
++    <>
++      <Script
++        src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"
++        strategy="beforeInteractive"
++      />
++      <DataStreamProvider>
++        {children}
++      </DataStreamProvider>
++    </>
++  );
++}
++
+
+diff --git a/app/play/page.tsx b/app/play/page.tsx
+new file mode 100644
+index 0000000..c3efc1d
+--- /dev/null
++++ b/app/play/page.tsx
+@@ -0,0 +1,53 @@
++import { cookies } from "next/headers";
++import { Suspense } from "react";
++import { Chat } from "@/components/chat";
++import { DataStreamHandler } from "@/components/data-stream-handler";
++import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
++import { generateUUID } from "@/lib/utils";
++
++export default function Page() {
++  return (
++    <Suspense fallback={<div className="flex h-dvh" />}>
++      <NewChatPage />
++    </Suspense>
++  );
++}
++
++async function NewChatPage() {
++  const cookieStore = await cookies();
++  const modelIdFromCookie = cookieStore.get("chat-model");
++  const id = generateUUID();
++
++  if (!modelIdFromCookie) {
++    return (
++      <>
++        <Chat
++          autoResume={false}
++          id={id}
++          initialChatModel={DEFAULT_CHAT_MODEL}
++          initialMessages={[]}
++          initialVisibilityType="private"
++          isReadonly={false}
++          key={id}
++        />
++        <DataStreamHandler />
++      </>
++    );
++  }
++
++  return (
++    <>
++      <Chat
++        autoResume={false}
++        id={id}
++        initialChatModel={modelIdFromCookie.value}
++        initialMessages={[]}
++        initialVisibilityType="private"
++        isReadonly={false}
++        key={id}
++      />
++      <DataStreamHandler />
++    </>
++  );
++}
++
+
+diff --git a/app/prompts/page.tsx b/app/prompts/page.tsx
+new file mode 100644
+index 0000000..66a1fde
+--- /dev/null
++++ b/app/prompts/page.tsx
+@@ -0,0 +1,9 @@
++export default function PromptsPage() {
++  return (
++    <div className="flex flex-col items-center justify-center h-full">
++      <h1 className="text-2xl font-bold">Prompts Configuration</h1>
++      <p className="text-muted-foreground">LLM prompt settings and configuration coming soon.</p>
++    </div>
++  );
++}
++
+
+diff --git a/components/layout/app-shell.tsx b/components/layout/app-shell.tsx
+new file mode 100644
+index 0000000..e88c3be
+--- /dev/null
++++ b/components/layout/app-shell.tsx
+@@ -0,0 +1,21 @@
++'use client';
++
++import { NavSidebar } from './nav-sidebar';
++import { NavMobileDrawer } from './nav-mobile-drawer';
++
++interface AppShellProps {
++  children: React.ReactNode;
++}
++
++export function AppShell({ children }: AppShellProps) {
++  return (
++    <div className="flex flex-col md:flex-row min-h-screen">
++      <NavSidebar />
++      <NavMobileDrawer />
++      <main className="flex-1 flex flex-col min-w-0">
++        {children}
++      </main>
++    </div>
++  );
++}
++
+
+diff --git a/components/layout/nav-item.tsx b/components/layout/nav-item.tsx
+new file mode 100644
+index 0000000..86b693a
+--- /dev/null
++++ b/components/layout/nav-item.tsx
+@@ -0,0 +1,64 @@
++'use client';
++
++import Link from 'next/link';
++import { usePathname } from 'next/navigation';
++import { LucideIcon } from 'lucide-react';
++import { cn } from '@/lib/utils';
++import {
++  Tooltip,
++  TooltipContent,
++  TooltipTrigger,
++  TooltipProvider,
++} from '@/components/ui/tooltip';
++
++interface NavItemProps {
++  icon: LucideIcon;
++  label: string;
++  href: string;
++  expanded?: boolean;
++  testId?: string;
++}
++
++export function NavItem({
++  icon: Icon,
++  label,
++  href,
++  expanded,
++  testId,
++}: NavItemProps) {
++  const pathname = usePathname();
++  const isActive = pathname.startsWith(href);
++
++  const content = (
++    <Link
++      href={href}
++      data-testid={testId}
++      className={cn(
++        'flex items-center h-10 w-full rounded-md px-3 transition-colors',
++        isActive
++          ? 'bg-accent text-accent-foreground'
++          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
++        !expanded && 'justify-center px-0 w-10 mx-auto',
++      )}
++    >
++      <Icon className="h-5 w-5 shrink-0" />
++      {expanded && <span className="ml-3 text-sm font-medium">{label}</span>}
++    </Link>
++  );
++
++  if (expanded) {
++    return content;
++  }
++
++  return (
++    <TooltipProvider delayDuration={0}>
++      <Tooltip>
++        <TooltipTrigger asChild>{content}</TooltipTrigger>
++        <TooltipContent side="right" className="font-medium">
++          {label}
++        </TooltipContent>
++      </Tooltip>
++    </TooltipProvider>
++  );
++}
++
+
+diff --git a/components/layout/nav-mobile-drawer.tsx b/components/layout/nav-mobile-drawer.tsx
+new file mode 100644
+index 0000000..750cd72
+--- /dev/null
++++ b/components/layout/nav-mobile-drawer.tsx
+@@ -0,0 +1,80 @@
++'use client';
++
++import { 
++  MessageSquare, 
++  Settings2, 
++  ScrollText, 
++  Sliders,
++  Menu
++} from 'lucide-react';
++import { NavItem } from './nav-item';
++import { Button } from '@/components/ui/button';
++import {
++  Sheet,
++  SheetContent,
++  SheetHeader,
++  SheetTitle,
++  SheetTrigger,
++} from '@/components/ui/sheet';
++import { useState } from 'react';
++
++export function NavMobileDrawer() {
++  const [open, setOpen] = useState(false);
++
++  const navItems = [
++    {
++      icon: MessageSquare,
++      label: 'Play',
++      href: '/play',
++      testId: 'nav-play',
++    },
++    {
++      icon: Settings2,
++      label: 'World Editor',
++      href: '/editor',
++      testId: 'nav-editor',
++    },
++    {
++      icon: ScrollText,
++      label: 'Event Log',
++      href: '/log',
++      testId: 'nav-log',
++    },
++    {
++      icon: Sliders,
++      label: 'Prompts',
++      href: '/prompts',
++      testId: 'nav-prompts',
++    },
++  ];
++
++  return (
++    <div className="md:hidden flex items-center p-2 border-b bg-background sticky top-0 z-50">
++      <Sheet open={open} onOpenChange={setOpen}>
++        <SheetTrigger asChild>
++          <Button variant="ghost" size="icon" data-testid="mobile-menu-trigger">
++            <Menu className="h-6 w-6" />
++            <span className="sr-only">Open menu</span>
++          </Button>
++        </SheetTrigger>
++        <SheetContent side="left" className="w-[280px] p-0" data-testid="mobile-drawer">
++          <SheetHeader className="p-4 border-b">
++            <SheetTitle className="text-left">SAIRPG</SheetTitle>
++          </SheetHeader>
++          <div className="flex flex-col gap-1 p-2">
++            {navItems.map((item) => (
++              <div key={item.href} onClick={() => setOpen(false)}>
++                <NavItem
++                  {...item}
++                  expanded={true}
++                />
++              </div>
++            ))}
++          </div>
++        </SheetContent>
++      </Sheet>
++      <div className="ml-4 font-bold text-lg">SAIRPG</div>
++    </div>
++  );
++}
++
+
+diff --git a/components/layout/nav-sidebar.tsx b/components/layout/nav-sidebar.tsx
+new file mode 100644
+index 0000000..55cf839
+--- /dev/null
++++ b/components/layout/nav-sidebar.tsx
+@@ -0,0 +1,85 @@
++'use client';
++
++import { 
++  MessageSquare, 
++  Settings2, 
++  ScrollText, 
++  Sliders,
++  ChevronLeft,
++  ChevronRight
++} from 'lucide-react';
++import { NavItem } from './nav-item';
++import { useGameStore } from '@/lib/stores/game-store';
++import { cn } from '@/lib/utils';
++import { Button } from '@/components/ui/button';
++
++export function NavSidebar() {
++  const { sidebarExpanded, setSidebarExpanded } = useGameStore();
++
++  const navItems = [
++    {
++      icon: MessageSquare,
++      label: 'Play',
++      href: '/play',
++      testId: 'nav-play',
++    },
++    {
++      icon: Settings2,
++      label: 'World Editor',
++      href: '/editor',
++      testId: 'nav-editor',
++    },
++    {
++      icon: ScrollText,
++      label: 'Event Log',
++      href: '/log',
++      testId: 'nav-log',
++    },
++    {
++      icon: Sliders,
++      label: 'Prompts',
++      href: '/prompts',
++      testId: 'nav-prompts',
++    },
++  ];
++
++  return (
++    <aside
++      data-testid="nav-sidebar"
++      className={cn(
++        'hidden md:flex flex-col border-r bg-background transition-all duration-300 ease-in-out h-screen sticky top-0',
++        sidebarExpanded ? 'w-60' : 'w-[52px]',
++      )}
++    >
++      <div className="flex-1 flex flex-col gap-2 p-1.5">
++        {navItems.map((item) => (
++          <NavItem
++            key={item.href}
++            {...item}
++            expanded={sidebarExpanded}
++          />
++        ))}
++      </div>
++
++      <div className="p-1.5 border-t">
++        <Button
++          variant="ghost"
++          size="icon"
++          className={cn('w-full flex items-center', sidebarExpanded ? 'justify-start px-2' : 'justify-center')}
++          onClick={() => setSidebarExpanded(!sidebarExpanded)}
++          aria-label={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
++        >
++          {sidebarExpanded ? (
++            <>
++              <ChevronLeft className="h-5 w-5 shrink-0" />
++              <span className="ml-3 text-sm font-medium">Collapse</span>
++            </>
++          ) : (
++            <ChevronRight className="h-5 w-5" />
++          )}
++        </Button>
++      </div>
++    </aside>
++  );
++}
++
+
+diff --git a/lib/stores/game-store.ts b/lib/stores/game-store.ts
+new file mode 100644
+index 0000000..8bebd50
+--- /dev/null
++++ b/lib/stores/game-store.ts
+@@ -0,0 +1,53 @@
++import { create } from 'zustand';
++import { persist } from 'zustand/middleware';
++
++export type ModuleId =
++  | 'narrator'
++  | 'time'
++  | 'inventory'
++  | 'economics'
++  | 'meta-events'
++  | 'nesting'
++  | 'npcs';
++
++export type ViewId = 'play' | 'editor' | 'log' | 'prompts';
++
++interface GameStore {
++  // Navigation
++  currentView: ViewId;
++  sidebarExpanded: boolean;
++  contextPaneOpen: boolean;
++
++  // Editor
++  selectedModule: ModuleId | null;
++
++  // Actions
++  setView: (view: ViewId) => void;
++  setSidebarExpanded: (expanded: boolean) => void;
++  setContextPaneOpen: (open: boolean) => void;
++  selectModule: (id: ModuleId | null) => void;
++}
++
++export const useGameStore = create<GameStore>()(
++  persist(
++    (set) => ({
++      currentView: 'play',
++      sidebarExpanded: false,
++      contextPaneOpen: true,
++      selectedModule: null,
++
++      setView: (view) => set({ currentView: view }),
++      setSidebarExpanded: (expanded) => set({ sidebarExpanded: expanded }),
++      setContextPaneOpen: (open) => set({ contextPaneOpen: open }),
++      selectModule: (id) => set({ selectedModule: id }),
++    }),
++    {
++      name: 'sairpg-game-store',
++      partialize: (state) => ({
++        sidebarExpanded: state.sidebarExpanded,
++        contextPaneOpen: state.contextPaneOpen,
++      }),
++    },
++  ),
++);
++
+
+========================================
+Worktree: dyx
+========================================
+
+diff --git a/app/layout.tsx b/app/layout.tsx
+index 66db5da..30c5a58 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -2,6 +2,7 @@ import type { Metadata } from "next";
+ import { Geist, Geist_Mono } from "next/font/google";
+ import { Toaster } from "sonner";
+ import { ThemeProvider } from "@/components/theme-provider";
++import { AppShell } from "@/components/layout/app-shell";
+ 
+ import "./globals.css";
+ import { SessionProvider } from "next-auth/react";
+@@ -79,7 +80,9 @@ export default function RootLayout({
+           enableSystem
+         >
+           <Toaster position="top-center" />
+-          <SessionProvider>{children}</SessionProvider>
++          <SessionProvider>
++            <AppShell>{children}</AppShell>
++          </SessionProvider>
+         </ThemeProvider>
+       </body>
+     </html>
+diff --git a/app/editor/page.tsx b/app/editor/page.tsx
+new file mode 100644
+index 0000000..d286617
+--- /dev/null
++++ b/app/editor/page.tsx
+@@ -0,0 +1,22 @@
++export default function EditorPage() {
++  return (
++    <div className="flex h-full">
++      {/* Module Graph Area */}
++      <div className="flex-1 p-4">
++        <h1 className="text-2xl font-bold mb-4">World Editor</h1>
++        <p className="text-muted-foreground">
++          Visual hub-and-spoke diagram for configuring world modules.
++        </p>
++        {/* TODO: Add module graph visualization */}
++      </div>
++
++      {/* Settings Panel - Right side */}
++      <div className="w-80 border-l bg-muted/50 p-4">
++        <h2 className="text-lg font-semibold mb-4">Module Settings</h2>
++        <p className="text-sm text-muted-foreground">
++          Configuration panel for the selected module.
++        </p>
++      </div>
++    </div>
++  );
++}
+
+diff --git a/app/log/page.tsx b/app/log/page.tsx
+new file mode 100644
+index 0000000..0542bf0
+--- /dev/null
++++ b/app/log/page.tsx
+@@ -0,0 +1,14 @@
++export default function LogPage() {
++  return (
++    <div className="h-full p-4">
++      <h1 className="text-2xl font-bold mb-4">Event Log</h1>
++      <p className="text-muted-foreground mb-4">
++        Chronological list of all module communications and game events.
++      </p>
++      {/* TODO: Add filters, search, timeline, and log entries */}
++      <div className="rounded-lg border bg-card p-4">
++        <p className="text-sm text-muted-foreground">Log entries will appear here...</p>
++      </div>
++    </div>
++  );
++}
+
+diff --git a/app/play/page.tsx b/app/play/page.tsx
+new file mode 100644
+index 0000000..465d385
+--- /dev/null
++++ b/app/play/page.tsx
+@@ -0,0 +1,22 @@
++export default function PlayPage() {
++  return (
++    <div className="flex h-full">
++      {/* Main Chat Area */}
++      <div className="flex-1 p-4">
++        <h1 className="text-2xl font-bold mb-4">Play</h1>
++        <p className="text-muted-foreground">
++          This is the main chat interface where you interact with your AI RPG.
++        </p>
++        {/* TODO: Integrate existing chat UI here */}
++      </div>
++
++      {/* Context Pane - Right side */}
++      <div className="w-80 border-l bg-muted/50 p-4">
++        <h2 className="text-lg font-semibold mb-4">Context Pane</h2>
++        <p className="text-sm text-muted-foreground">
++          Current scene summary, active modules, and quick stats will appear here.
++        </p>
++      </div>
++    </div>
++  );
++}
+
+diff --git a/app/prompts/page.tsx b/app/prompts/page.tsx
+new file mode 100644
+index 0000000..10a62e8
+--- /dev/null
++++ b/app/prompts/page.tsx
+@@ -0,0 +1,14 @@
++export default function PromptsPage() {
++  return (
++    <div className="h-full p-4">
++      <h1 className="text-2xl font-bold mb-4">Prompt Configuration</h1>
++      <p className="text-muted-foreground mb-4">
++        Configure prompts for each module using UI controls instead of code editing.
++      </p>
++      {/* TODO: Add module list and prompt editors */}
++      <div className="rounded-lg border bg-card p-4">
++        <p className="text-sm text-muted-foreground">Module prompt configurations will appear here...</p>
++      </div>
++    </div>
++  );
++}
+
+diff --git a/components/layout/app-shell.tsx b/components/layout/app-shell.tsx
+new file mode 100644
+index 0000000..b854944
+--- /dev/null
++++ b/components/layout/app-shell.tsx
+@@ -0,0 +1,40 @@
++"use client";
++
++import { useState } from "react";
++import { NavSidebar } from "./nav-sidebar";
++import { NavMobileDrawer } from "./nav-mobile-drawer";
++
++interface AppShellProps {
++  children: React.ReactNode;
++}
++
++export function AppShell({ children }: AppShellProps) {
++  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
++  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
++
++  return (
++    <div className="flex h-screen">
++      {/* Desktop Sidebar */}
++      <div className="hidden md:block">
++        <NavSidebar
++          isCollapsed={sidebarCollapsed}
++          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
++        />
++      </div>
++
++      {/* Mobile Header */}
++      <div className="flex h-14 items-center border-b bg-background px-4 md:hidden">
++        <NavMobileDrawer
++          isOpen={mobileDrawerOpen}
++          onOpenChange={setMobileDrawerOpen}
++        />
++        <h1 className="ml-4 text-lg font-semibold">SAIRPG</h1>
++      </div>
++
++      {/* Main Content */}
++      <main className="flex-1 overflow-hidden">
++        {children}
++      </main>
++    </div>
++  );
++}
+
+diff --git a/components/layout/nav-item.tsx b/components/layout/nav-item.tsx
+new file mode 100644
+index 0000000..9c07494
+--- /dev/null
++++ b/components/layout/nav-item.tsx
+@@ -0,0 +1,40 @@
++"use client";
++
++import Link from "next/link";
++import { usePathname } from "next/navigation";
++import { cn } from "@/lib/utils";
++import { MessageIcon, PencilEditIcon, LogsIcon, LineChartIcon } from "@/components/icons";
++
++interface NavItemProps {
++  href: string;
++  label: string;
++  isCollapsed: boolean;
++  icon: "play" | "editor" | "log" | "prompts";
++}
++
++const iconMap = {
++  play: MessageIcon,
++  editor: PencilEditIcon,
++  log: LogsIcon,
++  prompts: LineChartIcon,
++};
++
++export function NavItem({ href, label, isCollapsed, icon }: NavItemProps) {
++  const pathname = usePathname();
++  const isActive = pathname === href;
++  const IconComponent = iconMap[icon];
++
++  return (
++    <Link
++      href={href}
++      className={cn(
++        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
++        isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground",
++        isCollapsed && "justify-center px-2"
++      )}
++    >
++      <IconComponent size={16} />
++      {!isCollapsed && <span>{label}</span>}
++    </Link>
++  );
++}
+
+diff --git a/components/layout/nav-mobile-drawer.tsx b/components/layout/nav-mobile-drawer.tsx
+new file mode 100644
+index 0000000..797faaa
+--- /dev/null
++++ b/components/layout/nav-mobile-drawer.tsx
+@@ -0,0 +1,59 @@
++"use client";
++
++import { useRouter } from "next/navigation";
++import {
++  Sheet,
++  SheetContent,
++  SheetHeader,
++  SheetTitle,
++  SheetTrigger,
++} from "@/components/ui/sheet";
++import { MenuIcon, MessageIcon, PencilEditIcon, LogsIcon, LineChartIcon } from "@/components/icons";
++
++const navigationItems = [
++  { href: "/play", label: "Play", Icon: MessageIcon },
++  { href: "/editor", label: "World Editor", Icon: PencilEditIcon },
++  { href: "/log", label: "Event Log", Icon: LogsIcon },
++  { href: "/prompts", label: "Prompts", Icon: LineChartIcon },
++];
++
++interface NavMobileDrawerProps {
++  isOpen: boolean;
++  onOpenChange: (open: boolean) => void;
++}
++
++export function NavMobileDrawer({ isOpen, onOpenChange }: NavMobileDrawerProps) {
++  const router = useRouter();
++
++  const handleNavItemClick = (href: string) => {
++    router.push(href);
++    onOpenChange(false);
++  };
++
++  return (
++    <Sheet open={isOpen} onOpenChange={onOpenChange}>
++      <SheetTrigger asChild>
++        <button className="flex h-10 w-10 items-center justify-center rounded-md hover:bg-accent md:hidden">
++          <MenuIcon size={20} />
++        </button>
++      </SheetTrigger>
++      <SheetContent side="left" className="w-64">
++        <SheetHeader>
++          <SheetTitle>SAIRPG</SheetTitle>
++        </SheetHeader>
++        <nav className="mt-6 space-y-2">
++          {navigationItems.map((item) => (
++            <button
++              key={item.href}
++              onClick={() => handleNavItemClick(item.href)}
++              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
++            >
++              <item.Icon size={16} />
++              <span>{item.label}</span>
++            </button>
++          ))}
++        </nav>
++      </SheetContent>
++    </Sheet>
++  );
++}
+
+diff --git a/components/layout/nav-sidebar.tsx b/components/layout/nav-sidebar.tsx
+new file mode 100644
+index 0000000..5a50dd3
+--- /dev/null
++++ b/components/layout/nav-sidebar.tsx
+@@ -0,0 +1,61 @@
++"use client";
++
++import { useState } from "react";
++import { cn } from "@/lib/utils";
++import { NavItem } from "./nav-item";
++import { Button } from "@/components/ui/button";
++import { SidebarLeftIcon } from "@/components/icons";
++
++const navigationItems = [
++  { href: "/play", label: "Play", icon: "play" as const },
++  { href: "/editor", label: "World Editor", icon: "editor" as const },
++  { href: "/log", label: "Event Log", icon: "log" as const },
++  { href: "/prompts", label: "Prompts", icon: "prompts" as const },
++];
++
++interface NavSidebarProps {
++  isCollapsed: boolean;
++  onToggleCollapse: () => void;
++}
++
++export function NavSidebar({ isCollapsed, onToggleCollapse }: NavSidebarProps) {
++  return (
++    <div
++      className={cn(
++        "flex h-full flex-col border-r bg-background transition-all duration-300",
++        isCollapsed ? "w-12" : "w-48"
++      )}
++    >
++      {/* Header */}
++      <div className="flex items-center justify-between p-3">
++        {!isCollapsed && (
++          <h1 className="text-lg font-semibold">SAIRPG</h1>
++        )}
++        <Button
++          variant="ghost"
++          size="sm"
++          onClick={onToggleCollapse}
++          className={cn(
++            "h-8 w-8 p-0",
++            isCollapsed && "mx-auto"
++          )}
++        >
++          <SidebarLeftIcon size={16} />
++        </Button>
++      </div>
++
++      {/* Navigation Items */}
++      <nav className="flex-1 space-y-1 px-2">
++        {navigationItems.map((item) => (
++          <NavItem
++            key={item.href}
++            href={item.href}
++            label={item.label}
++            icon={item.icon}
++            isCollapsed={isCollapsed}
++          />
++        ))}
++      </nav>
++    </div>
++  );
++}
+
+========================================
+Worktree: kly
+========================================
+
+diff --git a/components/layout/app-shell.tsx b/components/layout/app-shell.tsx
+new file mode 100644
+index 0000000..432a728
+--- /dev/null
++++ b/components/layout/app-shell.tsx
+@@ -0,0 +1,30 @@
++"use client";
++
++import {
++  SidebarInset,
++  SidebarProvider,
++  SidebarTrigger,
++} from "@/components/ui/sidebar";
++import { NavSidebar } from "./nav-sidebar";
++
++interface AppShellProps {
++  children: React.ReactNode;
++}
++
++export function AppShell({ children }: AppShellProps) {
++  return (
++    <SidebarProvider defaultOpen={true}>
++      <NavSidebar />
++      <SidebarInset>
++        <div className="flex h-14 items-center border-b px-4 md:hidden">
++          <SidebarTrigger
++            className="md:hidden"
++            data-testid="mobile-menu-trigger"
++          />
++        </div>
++        {children}
++      </SidebarInset>
++    </SidebarProvider>
++  );
++}
++
+
+diff --git a/components/layout/nav-item.tsx b/components/layout/nav-item.tsx
+new file mode 100644
+index 0000000..5e32f45
+--- /dev/null
++++ b/components/layout/nav-item.tsx
+@@ -0,0 +1,47 @@
++"use client";
++
++import Link from "next/link";
++import { usePathname } from "next/navigation";
++import type { LucideIcon } from "lucide-react";
++import {
++  SidebarMenuButton,
++  SidebarMenuItem,
++  useSidebar,
++} from "@/components/ui/sidebar";
++
++interface NavItemProps {
++  icon: LucideIcon;
++  label: string;
++  route: string;
++  testId?: string;
++  onNavigate?: () => void;
++}
++
++export function NavItem({
++  icon: Icon,
++  label,
++  route,
++  testId,
++  onNavigate,
++}: NavItemProps) {
++  const pathname = usePathname();
++  const { state } = useSidebar();
++  const isActive = pathname === route || pathname.startsWith(`${route}/`);
++
++  return (
++    <SidebarMenuItem>
++      <SidebarMenuButton
++        asChild
++        isActive={isActive}
++        tooltip={state === "collapsed" ? label : undefined}
++        data-testid={testId}
++      >
++        <Link href={route} onClick={onNavigate}>
++          <Icon />
++          <span>{label}</span>
++        </Link>
++      </SidebarMenuButton>
++    </SidebarMenuItem>
++  );
++}
++
+
+diff --git a/components/layout/nav-mobile-drawer.tsx b/components/layout/nav-mobile-drawer.tsx
+new file mode 100644
+index 0000000..a1244c3
+--- /dev/null
++++ b/components/layout/nav-mobile-drawer.tsx
+@@ -0,0 +1,103 @@
++"use client";
++
++import { Menu, MessageSquare, Settings2, ScrollText, Sliders } from "lucide-react";
++import { useState } from "react";
++import Link from "next/link";
++import { usePathname } from "next/navigation";
++import { Button } from "@/components/ui/button";
++import {
++  Sheet,
++  SheetContent,
++  SheetHeader,
++  SheetTitle,
++  SheetTrigger,
++} from "@/components/ui/sheet";
++import { cn } from "@/lib/utils";
++
++const navigationItems = [
++  {
++    icon: MessageSquare,
++    label: "Play",
++    route: "/play",
++    testId: "nav-play",
++  },
++  {
++    icon: Settings2,
++    label: "World Editor",
++    route: "/editor",
++    testId: "nav-editor",
++  },
++  {
++    icon: ScrollText,
++    label: "Event Log",
++    route: "/log",
++    testId: "nav-log",
++  },
++  {
++    icon: Sliders,
++    label: "Prompts",
++    route: "/prompts",
++    testId: "nav-prompts",
++  },
++] as const;
++
++export function NavMobileDrawer() {
++  const [open, setOpen] = useState(false);
++  const pathname = usePathname();
++
++  return (
++    <Sheet onOpenChange={setOpen} open={open}>
++      <SheetTrigger asChild>
++        <Button
++          className="md:hidden"
++          data-testid="mobile-menu-trigger"
++          size="icon"
++          type="button"
++          variant="ghost"
++        >
++          <Menu />
++          <span className="sr-only">Toggle navigation menu</span>
++        </Button>
++      </SheetTrigger>
++      <SheetContent
++        className="w-[240px] sm:w-[300px]"
++        data-testid="mobile-drawer"
++        side="left"
++      >
++        <SheetHeader>
++          <SheetTitle>SAIRPG</SheetTitle>
++        </SheetHeader>
++        <nav className="mt-6">
++          <ul className="flex flex-col gap-1">
++            {navigationItems.map((item) => {
++              const Icon = item.icon;
++              const isActive =
++                pathname === item.route ||
++                pathname.startsWith(`${item.route}/`);
++
++              return (
++                <li key={item.route}>
++                  <Link
++                    className={cn(
++                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
++                      "hover:bg-accent hover:text-accent-foreground",
++                      isActive &&
++                        "bg-accent text-accent-foreground font-semibold"
++                    )}
++                    data-testid={item.testId}
++                    href={item.route}
++                    onClick={() => setOpen(false)}
++                  >
++                    <Icon className="size-4" />
++                    <span>{item.label}</span>
++                  </Link>
++                </li>
++              );
++            })}
++          </ul>
++        </nav>
++      </SheetContent>
++    </Sheet>
++  );
++}
++
+
+diff --git a/components/layout/nav-sidebar.tsx b/components/layout/nav-sidebar.tsx
+new file mode 100644
+index 0000000..1f177f3
+--- /dev/null
++++ b/components/layout/nav-sidebar.tsx
+@@ -0,0 +1,81 @@
++"use client";
++
++import { MessageSquare, Settings2, ScrollText, Sliders } from "lucide-react";
++import {
++  Sidebar,
++  SidebarContent,
++  SidebarHeader,
++  SidebarMenu,
++  SidebarRail,
++  useSidebar,
++} from "@/components/ui/sidebar";
++import { NavItem } from "./nav-item";
++
++const navigationItems = [
++  {
++    icon: MessageSquare,
++    label: "Play",
++    route: "/play",
++    testId: "nav-play",
++  },
++  {
++    icon: Settings2,
++    label: "World Editor",
++    route: "/editor",
++    testId: "nav-editor",
++  },
++  {
++    icon: ScrollText,
++    label: "Event Log",
++    route: "/log",
++    testId: "nav-log",
++  },
++  {
++    icon: Sliders,
++    label: "Prompts",
++    route: "/prompts",
++    testId: "nav-prompts",
++  },
++] as const;
++
++export function NavSidebar() {
++  const { setOpenMobile } = useSidebar();
++
++  return (
++    <Sidebar
++      collapsible="icon"
++      data-testid="nav-sidebar"
++      side="left"
++      variant="inset"
++    >
++      <SidebarHeader>
++        <SidebarMenu>
++          <div className="flex items-center justify-center px-2 py-4">
++            <span className="font-semibold text-lg group-data-[collapsible=icon]:hidden">
++              SAIRPG
++            </span>
++            <span className="font-semibold text-lg group-data-[collapsible=icon]:block hidden">
++              S
++            </span>
++          </div>
++        </SidebarMenu>
++      </SidebarHeader>
++      <SidebarContent data-testid="mobile-drawer">
++        <SidebarMenu>
++          {navigationItems.map((item) => (
++            <NavItem
++              key={item.route}
++              icon={item.icon}
++              label={item.label}
++              route={item.route}
++              testId={item.testId}
++              onNavigate={() => setOpenMobile(false)}
++            />
++          ))}
++        </SidebarMenu>
++      </SidebarContent>
++      <SidebarRail />
++    </Sidebar>
++  );
++}
++
+
+========================================
+Worktree: lwe
+========================================
+
+diff --git a/app/(chat)/layout.tsx b/app/(chat)/layout.tsx
+index f6d4f5f..08e9bfd 100644
+--- a/app/(chat)/layout.tsx
++++ b/app/(chat)/layout.tsx
+@@ -1,10 +1,6 @@
+-import { cookies } from "next/headers";
+ import Script from "next/script";
+ import { Suspense } from "react";
+-import { AppSidebar } from "@/components/app-sidebar";
+ import { DataStreamProvider } from "@/components/data-stream-provider";
+-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+-import { auth } from "../(auth)/auth";
+ 
+ export default function Layout({ children }: { children: React.ReactNode }) {
+   return (
+@@ -14,22 +10,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
+         strategy="beforeInteractive"
+       />
+       <DataStreamProvider>
+-        <Suspense fallback={<div className="flex h-dvh" />}>
+-          <SidebarWrapper>{children}</SidebarWrapper>
+-        </Suspense>
++        <Suspense fallback={<div className="flex h-dvh" />}>{children}</Suspense>
+       </DataStreamProvider>
+     </>
+   );
+ }
+-
+-async function SidebarWrapper({ children }: { children: React.ReactNode }) {
+-  const [session, cookieStore] = await Promise.all([auth(), cookies()]);
+-  const isCollapsed = cookieStore.get("sidebar_state")?.value !== "true";
+-
+-  return (
+-    <SidebarProvider defaultOpen={!isCollapsed}>
+-      <AppSidebar user={session?.user} />
+-      <SidebarInset>{children}</SidebarInset>
+-    </SidebarProvider>
+-  );
+-}
+diff --git a/app/layout.tsx b/app/layout.tsx
+index 66db5da..30c5a58 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -2,6 +2,7 @@ import type { Metadata } from "next";
+ import { Geist, Geist_Mono } from "next/font/google";
+ import { Toaster } from "sonner";
+ import { ThemeProvider } from "@/components/theme-provider";
++import { AppShell } from "@/components/layout/app-shell";
+ 
+ import "./globals.css";
+ import { SessionProvider } from "next-auth/react";
+@@ -79,7 +80,9 @@ export default function RootLayout({
+           enableSystem
+         >
+           <Toaster position="top-center" />
+-          <SessionProvider>{children}</SessionProvider>
++          <SessionProvider>
++            <AppShell>{children}</AppShell>
++          </SessionProvider>
+         </ThemeProvider>
+       </body>
+     </html>
+diff --git a/components/layout/app-shell.tsx b/components/layout/app-shell.tsx
+new file mode 100644
+index 0000000..4ff8775
+--- /dev/null
++++ b/components/layout/app-shell.tsx
+@@ -0,0 +1,25 @@
++"use client";
++
++import { ReactNode } from "react";
++
++import { NavMobileDrawer } from "./nav-mobile-drawer";
++import { NavSidebar } from "./nav-sidebar";
++
++interface AppShellProps {
++  children: ReactNode;
++}
++
++export function AppShell({ children }: AppShellProps) {
++  return (
++    <div className="flex min-h-screen bg-background text-foreground">
++      <NavSidebar />
++      <div className="flex flex-1 flex-col">
++        <div className="sticky top-0 z-40 w-full border-b border-sidebar-border bg-background/70 px-4 py-3 backdrop-blur-md md:hidden">
++          <NavMobileDrawer />
++        </div>
++        <main className="flex-1">{children}</main>
++      </div>
++    </div>
++  );
++}
++
+
+diff --git a/components/layout/nav-item.tsx b/components/layout/nav-item.tsx
+new file mode 100644
+index 0000000..f597429
+--- /dev/null
++++ b/components/layout/nav-item.tsx
+@@ -0,0 +1,59 @@
++"use client";
++
++import Link from "next/link";
++import { type LucideIcon } from "lucide-react";
++import { cn } from "@/lib/utils";
++
++export interface NavItemConfig {
++  label: string;
++  href: string;
++  description: string;
++  icon: LucideIcon;
++  testId: string;
++}
++
++interface NavItemProps extends NavItemConfig {
++  collapsed: boolean;
++  isActive: boolean;
++  onClick?: () => void;
++}
++
++export function NavItem({
++  label,
++  href,
++  icon: Icon,
++  description,
++  testId,
++  collapsed,
++  isActive,
++  onClick,
++}: NavItemProps) {
++  return (
++    <li>
++      <Link
++        href={href}
++        className={cn(
++          "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none",
++          isActive
++            ? "bg-sidebar-accent text-sidebar-accent-foreground"
++            : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
++        )}
++        aria-current={isActive ? "page" : undefined}
++        aria-label={description}
++        data-testid={testId}
++        onClick={onClick}
++      >
++        <Icon className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
++        <span
++          className={cn(
++            "whitespace-nowrap transition-opacity duration-200",
++            collapsed ? "opacity-0" : "opacity-100"
++          )}
++        >
++          {label}
++        </span>
++      </Link>
++    </li>
++  );
++}
++
+
+diff --git a/components/layout/nav-mobile-drawer.tsx b/components/layout/nav-mobile-drawer.tsx
+new file mode 100644
+index 0000000..86985c0
+--- /dev/null
++++ b/components/layout/nav-mobile-drawer.tsx
+@@ -0,0 +1,59 @@
++"use client";
++
++import { useState } from "react";
++import { HamburgerMenu } from "lucide-react";
++import {
++  Sheet,
++  SheetContent,
++  SheetTrigger,
++} from "@/components/ui/sheet";
++import { NavigationList } from "./nav-sidebar";
++
++export function NavMobileDrawer() {
++  const [isOpen, setIsOpen] = useState(false);
++
++  return (
++    <Sheet open={isOpen} onOpenChange={setIsOpen}>
++      <SheetTrigger asChild>
++        <button
++          type="button"
++          data-testid="mobile-menu-trigger"
++          className="md:hidden inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
++          aria-label="Open navigation drawer"
++        >
++          <HamburgerMenu className="h-5 w-5" aria-hidden="true" />
++          <span className="sr-only">Open navigation drawer</span>
++        </button>
++      </SheetTrigger>
++
++      <SheetContent
++        side="left"
++        className="md:hidden w-[280px] bg-sidebar p-0"
++        data-testid="mobile-drawer"
++      >
++        <div className="flex h-full flex-col gap-6 p-4">
++          <div className="flex items-center justify-between">
++            <div className="flex items-center gap-3">
++              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
++                <span className="text-lg font-semibold">S</span>
++              </div>
++              <div>
++                <p className="text-lg font-semibold">SAIRPG</p>
++                <p className="text-xs text-muted-foreground">
++                  Simulation RPG Workspace
++                </p>
++              </div>
++            </div>
++          </div>
++
++          <NavigationList
++            showLabels
++            className="gap-1"
++            onItemClick={() => setIsOpen(false)}
++          />
++        </div>
++      </SheetContent>
++    </Sheet>
++  );
++}
++
+
+diff --git a/components/layout/nav-sidebar.tsx b/components/layout/nav-sidebar.tsx
+new file mode 100644
+index 0000000..6a7678b
+--- /dev/null
++++ b/components/layout/nav-sidebar.tsx
+@@ -0,0 +1,145 @@
++"use client";
++
++import { usePathname } from "next/navigation";
++import { useState } from "react";
++import {
++  ChevronLeft,
++  ChevronRight,
++  MessageSquare,
++  ScrollText,
++  Settings2,
++  Sliders,
++} from "lucide-react";
++import { cn } from "@/lib/utils";
++import { NavItem, type NavItemConfig } from "./nav-item";
++
++const NAV_ITEMS: NavItemConfig[] = [
++  {
++    label: "Play",
++    href: "/play",
++    description: "Main chat interface",
++    icon: MessageSquare,
++    testId: "nav-play",
++  },
++  {
++    label: "World Editor",
++    href: "/editor",
++    description: "Behind-the-scenes module config",
++    icon: Settings2,
++    testId: "nav-editor",
++  },
++  {
++    label: "Event Log",
++    href: "/log",
++    description: "Full message history",
++    icon: ScrollText,
++    testId: "nav-log",
++  },
++  {
++    label: "Prompts",
++    href: "/prompts",
++    description: "LLM prompt configuration",
++    icon: Sliders,
++    testId: "nav-prompts",
++  },
++];
++
++interface NavigationListProps {
++  showLabels?: boolean;
++  onItemClick?: () => void;
++  className?: string;
++}
++
++export function NavigationList({
++  showLabels = true,
++  onItemClick,
++  className,
++}: NavigationListProps) {
++  const pathname = usePathname();
++
++  return (
++    <ul
++      className={cn("flex flex-1 flex-col gap-2 overflow-hidden", className)}
++      role="list"
++    >
++      {NAV_ITEMS.map((item) => (
++        <NavItem
++          key={item.href}
++          {...item}
++          collapsed={!showLabels}
++          isActive={pathname?.startsWith(item.href) ?? false}
++          onClick={onItemClick}
++        />
++      ))}
++    </ul>
++  );
++}
++
++export function NavSidebar() {
++  const [isExpanded, setIsExpanded] = useState(false);
++  const [isHovered, setIsHovered] = useState(false);
++  const hoverToExpand = true;
++  const showLabels = isExpanded || (hoverToExpand && isHovered);
++
++  return (
++    <nav
++      aria-label="SAIRPG navigation"
++      data-testid="nav-sidebar"
++      className={cn(
++        "hidden min-h-screen flex-col border-r border-sidebar-border bg-sidebar px-3 py-4 transition-[width] duration-200 ease-linear md:flex",
++        showLabels ? "w-[240px]" : "w-12"
++      )}
++      onMouseEnter={() => hoverToExpand && setIsHovered(true)}
++      onMouseLeave={() => hoverToExpand && setIsHovered(false)}
++    >
++      <div className="flex flex-col gap-6">
++        <div
++          className={cn(
++            "flex items-center gap-3 px-2 transition-opacity duration-200",
++            showLabels ? "opacity-100" : "opacity-90"
++          )}
++        >
++          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
++            <span className="text-lg font-semibold">S</span>
++          </div>
++          <span
++            className={cn(
++              "text-lg font-semibold tracking-wide transition-opacity duration-200",
++              showLabels ? "opacity-100" : "opacity-0"
++            )}
++          >
++            SAIRPG
++          </span>
++        </div>
++
++        <NavigationList showLabels={showLabels} className="mt-2" />
++      </div>
++
++      <button
++        type="button"
++        aria-label={showLabels ? "Collapse navigation" : "Expand navigation"}
++        aria-expanded={showLabels}
++        className={cn(
++          "mt-auto flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:opacity-50 md:mt-auto",
++          showLabels ? "justify-start" : "justify-center"
++        )}
++        onClick={() => setIsExpanded((prev) => !prev)}
++      >
++        {showLabels ? (
++          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
++        ) : (
++          <ChevronRight className="h-4 w-4" aria-hidden="true" />
++        )}
++        <span
++          className={cn(
++            "text-left transition-opacity duration-200",
++            showLabels ? "opacity-100" : "opacity-0"
++          )}
++        >
++          {showLabels ? "Collapse" : "Expand"}
++        </span>
++      </button>
++    </nav>
++  );
++}
++
