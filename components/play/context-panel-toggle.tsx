@@ -9,7 +9,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-export function ContextSidebarToggle() {
+export function ContextPanelToggle() {
   const contextPaneOpen = useGameStore((s) => s.contextPaneOpen);
   const toggleContextPane = useGameStore((s) => s.toggleContextPane);
 
@@ -18,7 +18,7 @@ export function ContextSidebarToggle() {
       <TooltipTrigger asChild>
         <Button
           className="h-8 px-2 md:h-fit md:px-2"
-          data-testid="context-sidebar-toggle-button"
+          data-testid="context-panel-toggle-button"
           onClick={toggleContextPane}
           variant="outline"
           type="button"
@@ -27,13 +27,12 @@ export function ContextSidebarToggle() {
             aria-hidden="true"
             className="size-4"
           />
-          <span className="sr-only">Toggle Context Sidebar</span>
+          <span className="sr-only">Toggle Context Panel</span>
         </Button>
       </TooltipTrigger>
-      <TooltipContent align="end" className="hidden md:block">
+      <TooltipContent align="start" className="hidden md:block">
         {contextPaneOpen ? "Hide Context" : "Show Context"}
       </TooltipContent>
     </Tooltip>
   );
 }
-

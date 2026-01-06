@@ -6,7 +6,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "@/components/ui/sidebar";
 import type { ModuleId } from "@/lib/stores/game-store";
 import { useGameStore } from "@/lib/stores/game-store";
@@ -29,7 +28,6 @@ export function NavItem({
   onNavigate,
 }: NavItemProps) {
   const pathname = usePathname();
-  const { state } = useSidebar();
   const setActiveModule = useGameStore((s) => s.setActiveModule);
 
   const isActive = pathname === route || pathname.startsWith(`${route}/`);
@@ -45,7 +43,7 @@ export function NavItem({
         asChild
         data-testid={testId}
         isActive={isActive}
-        tooltip={state === "collapsed" ? label : undefined}
+        tooltip={label}
       >
         <Link
           aria-current={isActive ? "page" : undefined}

@@ -4,12 +4,12 @@ import { useGameStore } from "@/lib/stores/game-store";
 import { CostStats } from "./cost-stats";
 import { cn } from "@/lib/utils";
 
-interface ContextSidebarProps {
+interface ContextPanelProps {
   chatId: string;
   children: React.ReactNode;
 }
 
-export function ContextSidebar({ chatId, children }: ContextSidebarProps) {
+export function ContextPanel({ chatId, children }: ContextPanelProps) {
   const contextPaneOpen = useGameStore((s) => s.contextPaneOpen);
 
   return (
@@ -19,7 +19,7 @@ export function ContextSidebar({ chatId, children }: ContextSidebarProps) {
           "flex flex-col border-r bg-sidebar text-sidebar-foreground transition-all duration-200",
           contextPaneOpen ? "w-80" : "w-0 overflow-hidden"
         )}
-        data-testid="context-sidebar"
+        data-testid="context-panel"
       >
         <div className="flex h-14 items-center border-b px-4">
           <span className="text-sm font-semibold">Context</span>
@@ -34,4 +34,3 @@ export function ContextSidebar({ chatId, children }: ContextSidebarProps) {
     </div>
   );
 }
-

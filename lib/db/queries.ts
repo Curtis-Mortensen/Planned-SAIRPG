@@ -23,6 +23,10 @@ import {
   chat,
   type DBMessage,
   document,
+  eventLog,
+  type EventLog,
+  gameSession,
+  type GameSession,
   message,
   type Suggestion,
   stream,
@@ -597,6 +601,188 @@ export async function getStreamIdsByChatId({ chatId }: { chatId: string }) {
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to get stream ids by chat id"
+    );
+  }
+}
+
+// =============================================================================
+// SAIRPG Event Log Queries
+// =============================================================================
+
+export async function getEventLogs({
+  sessionId,
+  branchId,
+  limit = 100,
+  offset = 0,
+  eventType,
+  moduleName,
+}: {
+  sessionId?: string;
+  branchId?: string;
+  limit?: number;
+  offset?: number;
+  eventType?: string;
+  moduleName?: string;
+}) {
+  try {
+    const conditions: SQL<any>[] = [];
+    
+    if (sessionId) {
+      conditions.push(eq(eventLog.sessionId, sessionId));
+    }
+    if (branchId) {
+      conditions.push(eq(eventLog.branchId, branchId));
+    }
+    if (eventType) {
+      conditions.push(eq(eventLog.eventType, eventType));
+    }
+    if (moduleName) {
+      conditions.push(eq(eventLog.moduleName, moduleName));
+    }
+
+    const query = conditions.length > 0
+      ? db
+          .select()
+          .from(eventLog)
+          .where(and(...conditions))
+          .orderBy(desc(eventLog.createdAt))
+          .limit(limit)
+          .offset(offset)
+      : db
+          .select()
+          .from(eventLog)
+          .orderBy(desc(eventLog.createdAt))
+          .limit(limit)
+          .offset(offset);
+
+    return await query;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get event logs"
+    );
+  }
+}
+
+export async function getEventLogCount({
+  sessionId,
+  branchId,
+}: {
+  sessionId?: string;
+  branchId?: string;
+}) {
+  try {
+    const conditions: SQL<any>[] = [];
+    
+    if (sessionId) {
+      conditions.push(eq(eventLog.sessionId, sessionId));
+    }
+    if (branchId) {
+      conditions.push(eq(eventLog.branchId, branchId));
+    }
+
+    const result = conditions.length > 0
+      ? await db
+          .select({ count: count() })
+          .from(eventLog)
+          .where(and(...conditions))
+      : await db.select({ count: count() }).from(eventLog);
+
+    return result[0]?.count ?? 0;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get event log count"
+    );
+  }
+}
+
+export async function createEventLog({
+  sessionId,
+  branchId,
+  sequenceNum,
+  turnId,
+  eventType,
+  moduleName = "system",
+  actor = "system",
+  payload = {},
+  parentEventId,
+}: {
+  sessionId: string;
+  branchId: string;
+  sequenceNum: string;
+  turnId?: string;
+  eventType: string;
+  moduleName?: string;
+  actor?: string;
+  payload?: Record<string, unknown>;
+  parentEventId?: string;
+}) {
+  try {
+    const [newEvent] = await db
+      .insert(eventLog)
+      .values({
+        sessionId,
+        branchId,
+        sequenceNum,
+        turnId,
+        eventType,
+        moduleName,
+        actor,
+        payload,
+        parentEventId,
+        validFromBranch: branchId,
+      })
+      .returning();
+
+    return newEvent;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to create event log"
+    );
+  }
+}
+
+export async function getGameSessions({ userId }: { userId: string }) {
+  try {
+    return await db
+      .select()
+      .from(gameSession)
+      .where(eq(gameSession.userId, userId))
+      .orderBy(desc(gameSession.updatedAt));
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get game sessions"
+    );
+  }
+}
+
+export async function createGameSession({
+  userId,
+  title,
+  worldId,
+}: {
+  userId: string;
+  title?: string;
+  worldId?: string;
+}) {
+  try {
+    const [newSession] = await db
+      .insert(gameSession)
+      .values({
+        userId,
+        title: title ?? "Untitled Adventure",
+        worldId,
+      })
+      .returning();
+
+    return newSession;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to create game session"
     );
   }
 }

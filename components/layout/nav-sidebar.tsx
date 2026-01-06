@@ -1,13 +1,14 @@
 "use client";
 
-import { Gamepad2 } from "lucide-react";
+import { User } from "lucide-react";
 import Link from "next/link";
 import {
   Sidebar,
   SidebarContent,
   SidebarHeader,
   SidebarMenu,
-  SidebarRail,
+  SidebarMenuButton,
+  SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { NAVIGATION_ITEMS } from "@/lib/constants/navigation";
@@ -25,19 +26,23 @@ export function NavSidebar() {
     >
       <SidebarHeader>
         <SidebarMenu>
-          <Link
-            className="flex items-center gap-2 px-2 py-4 transition-colors hover:opacity-80"
-            href="/play"
-            onClick={() => setOpenMobile(false)}
-          >
-            <Gamepad2
-              aria-hidden="true"
-              className="size-6 shrink-0 text-primary"
-            />
-            <span className="font-semibold text-lg group-data-[collapsible=icon]:hidden">
-              SAIRPG
-            </span>
-          </Link>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              tooltip="Profile"
+            >
+              <Link
+                href="/play"
+                onClick={() => setOpenMobile(false)}
+              >
+                <User
+                  aria-hidden="true"
+                  className="size-5 shrink-0"
+                />
+                <span>Profile</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
@@ -55,7 +60,6 @@ export function NavSidebar() {
           ))}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarRail />
     </Sidebar>
   );
 }

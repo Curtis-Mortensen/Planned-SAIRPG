@@ -2,7 +2,7 @@
 
 import { Chat } from "@/components/chat";
 import type { ChatMessage, VisibilityType } from "@/lib/types";
-import { ContextSidebar } from "./context-sidebar";
+import { ContextPanel } from "./context-panel";
 
 interface PlayChatProps {
   id: string;
@@ -22,7 +22,7 @@ export function PlayChat({
   autoResume,
 }: PlayChatProps) {
   return (
-    <ContextSidebar chatId={id}>
+    <ContextPanel chatId={id}>
       <Chat
         autoResume={autoResume}
         id={id}
@@ -31,7 +31,6 @@ export function PlayChat({
         initialVisibilityType={initialVisibilityType}
         isReadonly={isReadonly}
       />
-    </ContextSidebar>
+    </ContextPanel>
   );
 }
-

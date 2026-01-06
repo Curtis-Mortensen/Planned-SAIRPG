@@ -168,3 +168,97 @@ export const stream = pgTable(
 );
 
 export type Stream = InferSelectModel<typeof stream>;
+
+// =============================================================================
+// SAIRPG CORE TABLES
+// =============================================================================
+
+// Game Sessions
+export const gameSession = pgTable("GameSession", {
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  userId: uuid("userId")
+    .notNull()
+    .references(() => user.id),
+  worldId: uuid("worldId"),
+  title: text("title").notNull().default("Untitled Adventure"),
+  branchId: uuid("branchId").defaultRandom(),
+  parentBranchId: uuid("parentBranchId"),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export type GameSession = InferSelectModel<typeof gameSession>;
+
+// Event Log: Append-only log of all game events
+export const eventLog = pgTable("EventLog", {
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  sessionId: uuid("sessionId")
+    .notNull()
+    .references(() => gameSession.id, { onDelete: "cascade" }),
+  branchId: uuid("branchId").notNull(),
+  sequenceNum: text("sequenceNum").notNull(), // Using text for bigint compatibility
+  turnId: uuid("turnId"),
+  eventType: varchar("eventType", { length: 100 }).notNull(),
+  moduleName: varchar("moduleName", { length: 100 }).notNull().default("system"),
+  actor: varchar("actor", { length: 50 }).notNull().default("system"),
+  payload: json("payload").notNull().default({}),
+  parentEventId: uuid("parentEventId"),
+  validFromBranch: uuid("validFromBranch"),
+  invalidatedAtBranch: uuid("invalidatedAtBranch"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export type EventLog = InferSelectModel<typeof eventLog>;
+
+// Prompts: Versioned prompts for all modules
+export const prompt = pgTable("Prompt", {
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  moduleName: varchar("moduleName", { length: 100 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  version: text("version").notNull().default("1"),
+  content: text("content").notNull(),
+  settings: json("settings").notNull().default({}),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export type Prompt = InferSelectModel<typeof prompt>;
+
+// Artifacts: Every AI call is logged for debugging/replay
+export const artifact = pgTable("Artifact", {
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  sessionId: uuid("sessionId").references(() => gameSession.id, { onDelete: "cascade" }),
+  eventId: uuid("eventId").references(() => eventLog.id, { onDelete: "set null" }),
+  promptId: uuid("promptId").references(() => prompt.id, { onDelete: "set null" }),
+  moduleName: varchar("moduleName", { length: 100 }).notNull(),
+  model: varchar("model", { length: 100 }).notNull(),
+  inputText: text("inputText").notNull(),
+  outputText: text("outputText"),
+  tokensIn: text("tokensIn"),
+  tokensOut: text("tokensOut"),
+  latencyMs: text("latencyMs"),
+  costUsd: text("costUsd"),
+  status: varchar("status", { length: 50 }).notNull().default("pending"),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export type Artifact = InferSelectModel<typeof artifact>;
+
+// Branches: Track timeline branches for save/load/edit
+export const branch = pgTable("Branch", {
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  sessionId: uuid("sessionId")
+    .notNull()
+    .references(() => gameSession.id, { onDelete: "cascade" }),
+  parentBranchId: uuid("parentBranchId"),
+  forkEventId: uuid("forkEventId").references(() => eventLog.id),
+  name: varchar("name", { length: 255 }),
+  description: text("description"),
+  isActive: boolean("isActive").notNull().default(false),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export type Branch = InferSelectModel<typeof branch>;
