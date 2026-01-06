@@ -1,35 +1,18 @@
 import { cookies } from "next/headers";
-import { Suspense } from "react";
-import { PlayChat } from "@/components/play/play-chat";
-import { DataStreamHandler } from "@/components/data-stream-handler";
-import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
+import { redirect } from "next/navigation";
 import { generateUUID } from "@/lib/utils";
 
-export default function PlayPage() {
-  return (
-    <Suspense fallback={<div className="flex h-dvh" />}>
-      <NewGamePage />
-    </Suspense>
-  );
-}
-
-async function NewGamePage() {
+export default async function PlayPage() {
   const cookieStore = await cookies();
-  const modelIdFromCookie = cookieStore.get("chat-model");
-  const id = generateUUID();
+  const lastPlayId = cookieStore.get("last-play-id");
 
-  return (
-    <>
-      <PlayChat
-        autoResume={false}
-        id={id}
-        initialChatModel={modelIdFromCookie?.value ?? DEFAULT_CHAT_MODEL}
-        initialMessages={[]}
-        initialVisibilityType="private"
-        isReadonly={false}
-      />
-      <DataStreamHandler />
-    </>
-  );
+  // If user has a previous play session, try to resume it
+  if (lastPlayId?.value) {
+    redirect(`/play/${lastPlayId.value}`);
+  }
+
+  // Otherwise, start a new game
+  const id = generateUUID();
+  redirect(`/play/${id}`);
 }
 

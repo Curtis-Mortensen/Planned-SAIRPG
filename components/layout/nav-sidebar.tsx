@@ -1,10 +1,11 @@
 "use client";
 
-import { User } from "lucide-react";
+import { Settings, User } from "lucide-react";
 import Link from "next/link";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -19,34 +20,36 @@ export function NavSidebar() {
 
   return (
     <Sidebar
-      collapsible="icon"
+      className="w-14 min-w-14"
+      collapsible="none"
       data-testid="nav-sidebar"
       side="left"
       variant="inset"
     >
-      <SidebarHeader>
-        <SidebarMenu>
+      <SidebarHeader className="items-center px-0">
+        <SidebarMenu className="items-center">
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
+              className="size-10 p-0 flex items-center justify-center"
               tooltip="Profile"
             >
               <Link
-                href="/play"
+                href="/settings"
                 onClick={() => setOpenMobile(false)}
               >
                 <User
                   aria-hidden="true"
                   className="size-5 shrink-0"
                 />
-                <span>Profile</span>
+                <span className="sr-only">Profile</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent>
-        <SidebarMenu>
+      <SidebarContent className="items-center px-0">
+        <SidebarMenu className="items-center gap-2">
           {NAVIGATION_ITEMS.map((item) => (
             <NavItem
               key={item.route}
@@ -60,6 +63,22 @@ export function NavSidebar() {
           ))}
         </SidebarMenu>
       </SidebarContent>
+      <SidebarFooter className="items-center px-0">
+        <SidebarMenu className="items-center">
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              className="size-10 p-0 flex items-center justify-center"
+              tooltip="Settings"
+            >
+              <Link href="/settings" onClick={() => setOpenMobile(false)}>
+                <Settings className="size-5 shrink-0" />
+                <span className="sr-only">Settings</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   );
 }

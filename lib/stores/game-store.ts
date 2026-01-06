@@ -24,8 +24,8 @@ interface GameState {
   setActiveModule: (module: ModuleId) => void;
 
   // Editor state
-  selectedModule: string | null;
-  setSelectedModule: (module: string | null) => void;
+  selectedModule: string;
+  setSelectedModule: (module: string) => void;
   rightPanelTab: "prompt-editor" | "event-log";
   setRightPanelTab: (tab: "prompt-editor" | "event-log") => void;
   openNarratorPromptEditor: () => void;
@@ -44,7 +44,13 @@ interface GameState {
 
 export const useGameStore = create<GameState>()(
   persist(
-    (set) => ({
+    (set, get) => {
+      // #region agent log
+      if (typeof window !== "undefined") {
+        fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'game-store.ts:45',message:'Store initialization',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'A'})}).catch(()=>{});
+      }
+      // #endregion
+      return {
       // Sidebar state
       sidebarExpanded: false,
       setSidebarExpanded: (expanded) => set({ sidebarExpanded: expanded }),
@@ -56,7 +62,7 @@ export const useGameStore = create<GameState>()(
       setActiveModule: (module) => set({ activeModule: module }),
 
       // Editor state
-      selectedModule: null,
+      selectedModule: "narrator",
       setSelectedModule: (module) => set({ selectedModule: module }),
       rightPanelTab: "prompt-editor",
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
@@ -68,16 +74,39 @@ export const useGameStore = create<GameState>()(
 
       // Context pane
       contextPaneOpen: false,
-      setContextPaneOpen: (open) => set({ contextPaneOpen: open }),
-      toggleContextPane: () =>
-        set((state) => ({ contextPaneOpen: !state.contextPaneOpen })),
+      setContextPaneOpen: (open) => {
+        // #region agent log
+        if (typeof window !== "undefined") {
+          const currentState = get().contextPaneOpen;
+          fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'game-store.ts:71',message:'setContextPaneOpen called',data:{from:currentState,to:open},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
+        }
+        // #endregion
+        set({ contextPaneOpen: open });
+      },
+      toggleContextPane: () => {
+        // #region agent log
+        if (typeof window !== "undefined") {
+          const currentState = get().contextPaneOpen;
+          fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'game-store.ts:73',message:'toggleContextPane called',data:{before:currentState},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
+        }
+        // #endregion
+        set((state) => {
+          // #region agent log
+          if (typeof window !== "undefined") {
+            fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'game-store.ts:73',message:'toggleContextPane state update',data:{from:state.contextPaneOpen,to:!state.contextPaneOpen},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
+          }
+          // #endregion
+          return { contextPaneOpen: !state.contextPaneOpen };
+        });
+      },
       activeContextView: null,
       setActiveContextView: (view) => set({ activeContextView: view }),
 
       // Current session
       currentChatId: null,
       setCurrentChatId: (id) => set({ currentChatId: id }),
-    }),
+    };
+    },
     {
       name: "sairpg-game-store",
       partialize: (state) => ({
@@ -87,6 +116,13 @@ export const useGameStore = create<GameState>()(
         selectedModule: state.selectedModule,
         rightPanelTab: state.rightPanelTab,
       }),
+      onRehydrateStorage: () => (state) => {
+        // #region agent log
+        if (typeof window !== "undefined" && state) {
+          fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'game-store.ts:90',message:'onRehydrateStorage callback',data:{contextPaneOpen:state.contextPaneOpen},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'B'})}).catch(()=>{});
+        }
+        // #endregion
+      },
     }
   )
 );

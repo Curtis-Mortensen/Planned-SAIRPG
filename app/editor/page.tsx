@@ -7,7 +7,7 @@ export default function EditorPage() {
   return (
     <div className="flex flex-1">
       {/* Module Graph Area */}
-      <div className="flex flex-1 flex-col gap-4 p-8">
+      <div className="flex flex-1 flex-col gap-4 px-4 py-8">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-semibold text-2xl">World Editor</h1>

@@ -115,13 +115,13 @@ export function EventLogTab() {
                   </span>
                 </div>
                 
-                {event.payload && typeof event.payload === "object" && (
+                {event.payload && typeof event.payload === "object" ? (
                   <div className="rounded bg-muted/50 p-2 font-mono text-xs">
                     <pre className="whitespace-pre-wrap break-words">
-                      {JSON.stringify(event.payload, null, 2)}
+                      {JSON.stringify(event.payload as Record<string, unknown>, null, 2)}
                     </pre>
                   </div>
-                )}
+                ) : null}
 
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>
@@ -139,5 +139,3 @@ export function EventLogTab() {
     </div>
   );
 }
-
-

@@ -41,6 +41,7 @@ export function NavItem({
     <SidebarMenuItem>
       <SidebarMenuButton
         asChild
+        className="size-10 p-0 flex items-center justify-center"
         data-testid={testId}
         isActive={isActive}
         tooltip={label}
@@ -50,8 +51,8 @@ export function NavItem({
           href={route}
           onClick={handleClick}
         >
-          <Icon aria-hidden="true" />
-          <span>{label}</span>
+          <Icon aria-hidden="true" className="size-5 shrink-0" />
+          <span className="sr-only">{label}</span>
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useTheme } from "next-themes";
 
 import { useGameStore } from "@/lib/stores/game-store";
@@ -14,6 +15,12 @@ interface ContextPanelProps {
 export function ContextPanel({ chatId, children }: ContextPanelProps) {
   const contextPaneOpen = useGameStore((s) => s.contextPaneOpen);
   const { theme, setTheme } = useTheme();
+
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'context-panel.tsx:18',message:'ContextPanel render',data:{contextPaneOpen},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'D'})}).catch(()=>{});
+  }, [contextPaneOpen]);
+  // #endregion
 
   return (
     <div className="flex flex-1 overflow-hidden">

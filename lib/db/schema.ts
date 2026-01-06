@@ -206,6 +206,7 @@ export const eventLog = pgTable("EventLog", {
   parentEventId: uuid("parentEventId"),
   validFromBranch: uuid("validFromBranch"),
   invalidatedAtBranch: uuid("invalidatedAtBranch"),
+  cost: text("cost"), // Storing as text for precision, similar to other numeric fields if needed, or real/numeric
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 

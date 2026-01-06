@@ -1,7 +1,9 @@
 "use client";
 
 import { Chat } from "@/components/chat";
-import type { ChatMessage, VisibilityType } from "@/lib/types";
+import { useEffect } from "react";
+import type { ChatMessage } from "@/lib/types";
+import type { VisibilityType } from "@/components/visibility-selector";
 import { ContextPanel } from "./context-panel";
 
 interface PlayChatProps {
@@ -21,6 +23,10 @@ export function PlayChat({
   isReadonly,
   autoResume,
 }: PlayChatProps) {
+  useEffect(() => {
+    document.cookie = `last-play-id=${id}; path=/`;
+  }, [id]);
+
   return (
     <ContextPanel chatId={id}>
       <Chat

@@ -197,3 +197,50 @@
 {"location":"event-log-tab.tsx:22","message":"before fetch","data":{"url":"/api/event-log?limit=100"},"timestamp":1767692361080,"sessionId":"debug-session","runId":"run3","hypothesisId":"F"}
 {"location":"event-log-tab.tsx:25","message":"after fetch","data":{"ok":true,"status":200,"statusText":"OK"},"timestamp":1767692361205,"sessionId":"debug-session","runId":"run3","hypothesisId":"F"}
 {"location":"event-log-tab.tsx:33","message":"data received","data":{"eventsCount":11,"totalCount":11},"timestamp":1767692361207,"sessionId":"debug-session","runId":"run3","hypothesisId":"F"}
+{"location":"game-store.ts:45","message":"Store initialization","data":{"timestamp":1767698222720},"timestamp":1767698222720,"sessionId":"debug-session","runId":"initial","hypothesisId":"A"}
+{"location":"game-store.ts:90","message":"onRehydrateStorage callback","data":{"contextPaneOpen":true},"timestamp":1767698222722,"sessionId":"debug-session","runId":"initial","hypothesisId":"B"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767698243722,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767698243747,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767698251686,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767698251732,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"game-store.ts:45","message":"Store initialization","data":{"timestamp":1767698263568},"timestamp":1767698263568,"sessionId":"debug-session","runId":"initial","hypothesisId":"A"}
+{"location":"game-store.ts:90","message":"onRehydrateStorage callback","data":{"contextPaneOpen":true},"timestamp":1767698263569,"sessionId":"debug-session","runId":"initial","hypothesisId":"B"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767698265630,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767698265645,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"game-store.ts:45","message":"Store initialization","data":{"timestamp":1767698549560},"timestamp":1767698549560,"sessionId":"debug-session","runId":"initial","hypothesisId":"A"}
+{"location":"game-store.ts:90","message":"onRehydrateStorage callback","data":{"contextPaneOpen":true},"timestamp":1767698549560,"sessionId":"debug-session","runId":"initial","hypothesisId":"B"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767698801630,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":true},"timestamp":1767698801639,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767698801654,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":true},"timestamp":1767698801660,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:22","message":"Button onClick triggered","data":{"contextPaneOpenBefore":true},"timestamp":1767698804828,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"game-store.ts:73","message":"toggleContextPane called","data":{"before":true},"timestamp":1767698804828,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"game-store.ts:73","message":"toggleContextPane state update","data":{"from":true,"to":false},"timestamp":1767698804829,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767698804842,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":false},"timestamp":1767698804842,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:22","message":"Button onClick triggered","data":{"contextPaneOpenBefore":false},"timestamp":1767698805825,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"game-store.ts:73","message":"toggleContextPane called","data":{"before":false},"timestamp":1767698805826,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"game-store.ts:73","message":"toggleContextPane state update","data":{"from":false,"to":true},"timestamp":1767698805826,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767698805834,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":true},"timestamp":1767698805834,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:22","message":"Button onClick triggered","data":{"contextPaneOpenBefore":true},"timestamp":1767698809540,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"game-store.ts:73","message":"toggleContextPane called","data":{"before":true},"timestamp":1767698809540,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"game-store.ts:73","message":"toggleContextPane state update","data":{"from":true,"to":false},"timestamp":1767698809541,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":false},"timestamp":1767698809549,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767698809549,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767698914024,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767698914051,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767698976510,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":false},"timestamp":1767698976534,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767698976569,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":false},"timestamp":1767698976573,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"game-store.ts:45","message":"Store initialization","data":{"timestamp":1767699271373},"timestamp":1767699271373,"sessionId":"debug-session","runId":"initial","hypothesisId":"A"}
+{"location":"game-store.ts:90","message":"onRehydrateStorage callback","data":{"contextPaneOpen":false},"timestamp":1767699271374,"sessionId":"debug-session","runId":"initial","hypothesisId":"B"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767699294192,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":false},"timestamp":1767699294197,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767699294199,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":false},"timestamp":1767699294201,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767699303595,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":false},"timestamp":1767699303599,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767699303605,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":false},"timestamp":1767699303606,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}

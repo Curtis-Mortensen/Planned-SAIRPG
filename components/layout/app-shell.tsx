@@ -13,10 +13,7 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   return (
-    <SidebarProvider
-      defaultOpen={false}
-      open={false}
-    >
+    <SidebarProvider>
       <NavSidebar />
       <SidebarInset>
         <header className="flex h-14 items-center gap-2 border-b px-4 md:hidden">

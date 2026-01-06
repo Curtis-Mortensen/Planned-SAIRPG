@@ -10,6 +10,7 @@ import {
   gte,
   inArray,
   lt,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -98,6 +99,7 @@ export async function getUserById(id: string): Promise<User | null> {
     return null;
   }
 }
+
 
 export async function saveChat({
   id,
@@ -710,6 +712,29 @@ export async function getEventLogs({
   }
 }
 
+export async function getChatCost(chatId: string) {
+  try {
+    // We need to sum up the cost column from eventLog
+    // However, eventLog doesn't have a direct chatId column, it's in the payload
+    // BUT, traversing JSON in SQL for summing might be slow or complex depending on indexed paths
+    // A better approach for now might be to filter by sessionId if we can link it,
+    // OR just use the payload filter.
+    // Given the current architecture, we might have to rely on the fact that we put chatId in payload.
+
+    // Drizzle approach with raw SQL for casting + summing text columns.
+    // We use sql generic for the query.
+
+    const result = await db.execute(
+      sql`SELECT SUM(CAST(${eventLog.cost} AS REAL)) as total_cost FROM ${eventLog} WHERE ${eventLog.payload}->>'chatId' = ${chatId}`
+    );
+
+    return result[0]?.total_cost ?? 0;
+  } catch (error) {
+    console.warn("Failed to get chat cost:", error);
+    return 0;
+  }
+}
+
 export async function getEventLogCount({
   sessionId,
   branchId,
@@ -753,6 +778,7 @@ export async function createEventLog({
   actor = "system",
   payload = {},
   parentEventId,
+  cost,
 }: {
   sessionId: string;
   branchId: string;
@@ -763,6 +789,7 @@ export async function createEventLog({
   actor?: string;
   payload?: Record<string, unknown>;
   parentEventId?: string;
+  cost?: string; // Stored as text to match schema
 }) {
   try {
     const [newEvent] = await db
@@ -778,6 +805,7 @@ export async function createEventLog({
         payload,
         parentEventId,
         validFromBranch: branchId,
+        cost,
       })
       .returning();
 

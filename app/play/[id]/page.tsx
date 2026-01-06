@@ -26,14 +26,30 @@ async function GameSessionPage({
   const { id } = await params;
   const chat = await getChatById({ id });
 
-  if (!chat) {
-    redirect("/play");
-  }
-
   const session = await auth();
 
   if (!session) {
     redirect("/api/auth/guest");
+  }
+
+  // If no chat exists, render a new game with empty messages
+  if (!chat) {
+    const cookieStore = await cookies();
+    const chatModelFromCookie = cookieStore.get("chat-model");
+
+    return (
+      <>
+        <PlayChat
+          autoResume={false}
+          id={id}
+          initialChatModel={chatModelFromCookie?.value ?? DEFAULT_CHAT_MODEL}
+          initialMessages={[]}
+          initialVisibilityType="private"
+          isReadonly={false}
+        />
+        <DataStreamHandler />
+      </>
+    );
   }
 
   if (chat.visibility === "private") {

@@ -41,6 +41,7 @@ import { ChatSDKError } from "@/lib/errors";
 import type { ChatMessage } from "@/lib/types";
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
 import { generateTitleFromUserMessage } from "../../actions";
+import { calculateCost } from "@/lib/ai/cost";
 import { type PostRequestBody, postRequestBodySchema } from "./schema";
 
 export const maxDuration = 60;
@@ -240,6 +241,11 @@ export async function POST(request: Request) {
             chatId: id,
             messageId: message.id 
           },
+          cost: calculateCost({ 
+            model: selectedChatModel, 
+            tokensIn: userText.length / 4, // Rough estimate if not available
+            tokensOut: 0
+          }).toString()
         });
       }
     } catch (error) {
@@ -381,6 +387,11 @@ export async function POST(request: Request) {
                        chatId: id,
                        messageId: msg.id
                      },
+                     cost: calculateCost({ 
+                       model: selectedChatModel, 
+                       tokensIn: 0, 
+                       tokensOut: assistantText.length / 4 // Rough estimate till we get usage
+                     }).toString()
                    });
                 }
               }

@@ -66,10 +66,14 @@ export function PromptEditorTab() {
           setLore(data.settings.lore ?? "");
           setPromptContent(data.content);
           setHasChanges(false);
+        } else {
+          // Module doesn't have a prompt yet - show placeholder
+          setPromptData(null);
         }
       } catch (error) {
         console.error("Failed to load prompt:", error);
-        toast.error("Failed to load prompt configuration");
+        // Module doesn't have a prompt yet - show placeholder
+        setPromptData(null);
       } finally {
         setIsLoading(false);
       }
@@ -149,9 +153,29 @@ export function PromptEditorTab() {
   }
 
   if (!promptData) {
+    const moduleNames: Record<string, string> = {
+      narrator: "Narrator Module",
+      "valid-input": "Valid Input Module",
+      "meta-nesting": "Meta Nesting Module", 
+      "meta-event": "Meta Event Module",
+      time: "Time Module",
+      npc: "NPC Module",
+      difficulty: "Difficulty Module",
+    };
+
+    const displayName = moduleNames[selectedModule] || selectedModule;
+    
     return (
-      <div className="flex flex-1 flex-col items-center justify-center p-4">
-        <p className="text-muted-foreground">No prompt found for {selectedModule}</p>
+      <div className="flex flex-1 flex-col items-center justify-center p-4 gap-4">
+        <div className="text-center">
+          <h3 className="font-semibold text-lg mb-2">{displayName}</h3>
+          <p className="text-muted-foreground text-sm">
+            {selectedModule === "narrator" 
+              ? "This module is not configured yet. Check back soon!"
+              : "This module is coming soon. Stay tuned for updates!"
+            }
+          </p>
+        </div>
       </div>
     );
   }
