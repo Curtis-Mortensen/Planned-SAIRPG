@@ -1,7 +1,15 @@
-import { auth } from "@/app/(auth)/auth";
+import { auth, signIn } from "@/app/(auth)/auth";
 import { createEventLog, createGameSession } from "@/lib/db/queries";
 import { generateUUID } from "@/lib/utils";
 import { NextResponse } from "next/server";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { eq } from "drizzle-orm";
+import { user } from "@/lib/db/schema";
+
+// biome-ignore lint: Forbidden non-null assertion.
+const client = postgres(process.env.POSTGRES_URL!);
+const db = drizzle(client);
 
 // Sample event data for testing
 const SAMPLE_EVENTS = [
@@ -80,10 +88,23 @@ const SAMPLE_EVENTS = [
 ];
 
 export async function POST(request: Request) {
-  const session = await auth();
+  let session = await auth();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.redirect(new URL("/api/auth/guest?redirectUrl=/api/event-log/seed", request.url));
+  }
+
+  // Verify user exists in database, if not create a new guest user
+  const [existingUser] = await db.select().from(user).where(eq(user.id, session.user.id)).limit(1);
+  
+  if (!existingUser) {
+    // User doesn't exist, sign in as guest to create a new one
+    await signIn("guest", { redirect: false });
+    // Get the new session
+    session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Failed to create guest user" }, { status: 500 });
+    }
   }
 
   // Only allow in development
@@ -128,8 +149,37 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Failed to seed event logs:", error);
+    
+    // Check if this is a "user not found" error (either explicit or foreign key violation)
+    const errorObj = error && typeof error === 'object' ? error : {};
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorCause = 'cause' in errorObj ? String(errorObj.cause) : '';
+    const isChatSDKError = error && typeof error === 'object' && 'surface' in error && 'type' in error;
+    const errorType = isChatSDKError ? (error as { type: string }).type : '';
+    const errorSurface = isChatSDKError ? (error as { surface: string }).surface : '';
+    const fullErrorText = `${errorMessage} ${errorCause}`.toLowerCase();
+    
+    if (
+      (errorType === 'not_found' && errorSurface === 'database') ||
+      fullErrorText.includes('does not exist in database') ||
+      (fullErrorText.includes('foreign key constraint') && fullErrorText.includes('userid'))
+    ) {
+      return NextResponse.json(
+        { 
+          error: "User session is invalid", 
+          details: "Your user account no longer exists in the database. Please sign out and sign in again to create a new account.",
+          code: "USER_NOT_FOUND"
+        },
+        { status: 401 }
+      );
+    }
+    
     return NextResponse.json(
-      { error: "Failed to seed event logs" },
+      { 
+        error: "Failed to seed event logs", 
+        details: error instanceof Error ? error.message : String(error),
+        cause: errorCause || undefined
+      },
       { status: 500 }
     );
   }

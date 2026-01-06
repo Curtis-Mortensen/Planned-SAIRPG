@@ -4,7 +4,7 @@ import { isToday, isYesterday, subMonths, subWeeks } from "date-fns";
 import { motion } from "framer-motion";
 import { usePathname, useRouter } from "next/navigation";
 import type { User } from "next-auth";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import useSWRInfinite from "swr/infinite";
 import {
@@ -43,8 +43,7 @@ export type ChatHistory = {
 
 const PAGE_SIZE = 20;
 
-const groupChatsByDate = (chats: Chat[]): GroupedChats => {
-  const now = new Date();
+const groupChatsByDate = (chats: Chat[], now: Date): GroupedChats => {
   const oneWeekAgo = subWeeks(now, 1);
   const oneMonthAgo = subMonths(now, 1);
 
@@ -101,6 +100,10 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
   const { setOpenMobile } = useSidebar();
   const pathname = usePathname();
   const id = pathname?.startsWith("/chat/") ? pathname.split("/")[2] : null;
+
+  // Memoize the current date to prevent hydration mismatches
+  // The date is only calculated once per component mount
+  const now = useMemo(() => new Date(), []);
 
   const {
     data: paginatedChatHistories,
@@ -223,7 +226,7 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
                   (paginatedChatHistory) => paginatedChatHistory.chats
                 );
 
-                const groupedChats = groupChatsByDate(chatsFromHistory);
+                const groupedChats = groupChatsByDate(chatsFromHistory, now);
 
                 return (
                   <div className="flex flex-col gap-6">

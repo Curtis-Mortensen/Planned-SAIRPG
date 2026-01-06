@@ -7,6 +7,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { unstable_serialize } from "swr/infinite";
+import { Settings } from "lucide-react";
 import { PlusIcon, TrashIcon } from "@/components/icons";
 import {
   getChatHistoryPaginationKey,
@@ -35,10 +36,10 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 export function AppSidebar({ user }: { user: User | undefined }) {
-  const router = useRouter();
   const { setOpenMobile } = useSidebar();
   const { mutate } = useSWRConfig();
   const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
+  const router = useRouter();
 
   const handleDeleteAll = () => {
     const deletePromise = fetch("/api/history", {
@@ -110,6 +111,24 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                   </TooltipTrigger>
                   <TooltipContent align="end" className="hidden md:block">
                     New Chat
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      className="h-8 p-1 md:h-fit md:p-2"
+                      onClick={() => {
+                        setOpenMobile(false);
+                        router.push("/settings");
+                      }}
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent align="end" className="hidden md:block">
+                    Settings
                   </TooltipContent>
                 </Tooltip>
               </div>

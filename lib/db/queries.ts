@@ -28,6 +28,8 @@ import {
   gameSession,
   type GameSession,
   message,
+  prompt,
+  type Prompt,
   type Suggestion,
   stream,
   suggestion,
@@ -75,11 +77,25 @@ export async function createGuestUser() {
       id: user.id,
       email: user.email,
     });
-  } catch (_error) {
+  } catch (error) {
     throw new ChatSDKError(
       "bad_request:database",
-      "Failed to create guest user"
+      `Failed to create guest user: ${error instanceof Error ? error.message : String(error)}`
     );
+  }
+}
+
+export async function getUserById(id: string): Promise<User | null> {
+  try {
+    const [existingUser] = await db
+      .select()
+      .from(user)
+      .where(eq(user.id, id))
+      .limit(1);
+    return existingUser || null;
+  } catch (_error) {
+    // Return null instead of throwing - the user simply doesn't exist
+    return null;
   }
 }
 
@@ -95,6 +111,16 @@ export async function saveChat({
   visibility: VisibilityType;
 }) {
   try {
+    // Check if user exists before creating chat
+    const [existingUser] = await db.select().from(user).where(eq(user.id, userId)).limit(1);
+    
+    if (!existingUser) {
+      throw new ChatSDKError(
+        "not_found:database",
+        `User with id ${userId} does not exist in database. Please sign out and sign in again.`
+      );
+    }
+
     return await db.insert(chat).values({
       id,
       createdAt: new Date(),
@@ -102,8 +128,25 @@ export async function saveChat({
       title,
       visibility,
     });
-  } catch (_error) {
-    throw new ChatSDKError("bad_request:database", "Failed to save chat");
+  } catch (error) {
+    // If it's already a ChatSDKError, re-throw it
+    if (error instanceof ChatSDKError) {
+      throw error;
+    }
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Handle duplicate key error gracefully (race condition)
+    if (errorMessage.includes("duplicate key") || errorMessage.includes("unique constraint")) {
+      // Chat already exists, which is fine - just return without error
+      // This can happen in race conditions where two requests try to create the same chat
+      return;
+    }
+    
+    throw new ChatSDKError(
+      "bad_request:database",
+      `Failed to save chat: ${errorMessage}`
+    );
   }
 }
 
@@ -249,8 +292,11 @@ export async function getChatById({ id }: { id: string }) {
 export async function saveMessages({ messages }: { messages: DBMessage[] }) {
   try {
     return await db.insert(message).values(messages);
-  } catch (_error) {
-    throw new ChatSDKError("bad_request:database", "Failed to save messages");
+  } catch (error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      `Failed to save messages: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
@@ -739,7 +785,7 @@ export async function createEventLog({
   } catch (_error) {
     throw new ChatSDKError(
       "bad_request:database",
-      "Failed to create event log"
+      `Failed to create event log: ${_error instanceof Error ? _error.message : String(_error)}`
     );
   }
 }
@@ -769,6 +815,16 @@ export async function createGameSession({
   worldId?: string;
 }) {
   try {
+    // Check if user exists before creating game session
+    const [existingUser] = await db.select().from(user).where(eq(user.id, userId)).limit(1);
+    
+    if (!existingUser) {
+      throw new ChatSDKError(
+        "not_found:database",
+        `User with id ${userId} does not exist in database`
+      );
+    }
+
     const [newSession] = await db
       .insert(gameSession)
       .values({
@@ -782,7 +838,90 @@ export async function createGameSession({
   } catch (_error) {
     throw new ChatSDKError(
       "bad_request:database",
-      "Failed to create game session"
+      `Failed to create game session: ${_error instanceof Error ? _error.message : String(_error)}`
+    );
+  }
+}
+
+// ============================================================================
+// Prompt Management
+// ============================================================================
+
+export async function getPromptByModule(
+  moduleName: string,
+  name = "default"
+): Promise<Prompt | null> {
+  try {
+    const prompts = await db
+      .select()
+      .from(prompt)
+      .where(
+        and(
+          eq(prompt.moduleName, moduleName),
+          eq(prompt.name, name),
+          eq(prompt.isActive, true)
+        )
+      )
+      .orderBy(desc(prompt.version))
+      .limit(1);
+
+    return prompts[0] ?? null;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      `Failed to get prompt for module ${moduleName}: ${_error instanceof Error ? _error.message : String(_error)}`
+    );
+  }
+}
+
+export async function upsertPrompt({
+  moduleName,
+  name = "default",
+  content,
+  settings,
+}: {
+  moduleName: string;
+  name?: string;
+  content: string;
+  settings: Record<string, unknown>;
+}): Promise<Prompt> {
+  try {
+    // Check if prompt exists
+    const existing = await getPromptByModule(moduleName, name);
+
+    if (existing) {
+      // Update existing prompt
+      const [updated] = await db
+        .update(prompt)
+        .set({
+          content,
+          settings,
+          updatedAt: new Date(),
+        })
+        .where(eq(prompt.id, existing.id))
+        .returning();
+
+      return updated;
+    }
+
+    // Create new prompt
+    const [newPrompt] = await db
+      .insert(prompt)
+      .values({
+        moduleName,
+        name,
+        content,
+        settings,
+        version: "1",
+        isActive: true,
+      })
+      .returning();
+
+    return newPrompt;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      `Failed to upsert prompt: ${_error instanceof Error ? _error.message : String(_error)}`
     );
   }
 }

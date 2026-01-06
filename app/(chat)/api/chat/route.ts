@@ -27,10 +27,14 @@ import {
   getChatById,
   getMessageCountByUserId,
   getMessagesByChatId,
+  getUserById,
   saveChat,
   saveMessages,
   updateChatTitleById,
   updateMessage,
+  createEventLog,
+  createGameSession,
+  getGameSessions,
 } from "@/lib/db/queries";
 import type { DBMessage } from "@/lib/db/schema";
 import { ChatSDKError } from "@/lib/errors";
@@ -41,26 +45,40 @@ import { type PostRequestBody, postRequestBodySchema } from "./schema";
 
 export const maxDuration = 60;
 
-let globalStreamContext: ResumableStreamContext | null = null;
+let globalStreamContext: ResumableStreamContext | null | undefined = undefined;
+let streamContextInitialized = false;
 
 export function getStreamContext() {
-  if (!globalStreamContext) {
+  // Only try to initialize once
+  if (!streamContextInitialized) {
+    streamContextInitialized = true;
     try {
       globalStreamContext = createResumableStreamContext({
         waitUntil: after,
       });
     } catch (error: any) {
-      if (error.message.includes("REDIS_URL")) {
+      const errorMessage = error?.message || String(error);
+      const errorCode = error?.code || "";
+      
+      // Handle various error cases where resumable streams can't be initialized
+      if (
+        errorMessage.includes("REDIS_URL") ||
+        errorMessage.includes("KV_URL") ||
+        errorCode === "ERR_INVALID_URL" ||
+        errorMessage.includes("Invalid URL")
+      ) {
         console.log(
-          " > Resumable streams are disabled due to missing REDIS_URL"
+          " > Resumable streams are disabled due to missing or invalid REDIS_URL/KV_URL"
         );
       } else {
-        console.error(error);
+        console.error("Failed to create resumable stream context:", error);
       }
+      // Set to null to indicate initialization was attempted but failed
+      globalStreamContext = null;
     }
   }
 
-  return globalStreamContext;
+  return globalStreamContext ?? null;
 }
 
 export async function POST(request: Request) {
@@ -81,6 +99,15 @@ export async function POST(request: Request) {
 
     if (!session?.user) {
       return new ChatSDKError("unauthorized:chat").toResponse();
+    }
+
+    // Verify user exists in database (protects against stale JWT tokens)
+    const existingUser = await getUserById(session.user.id);
+    if (!existingUser) {
+      return new ChatSDKError(
+        "not_found:database",
+        "User not found in database. Please refresh the page to sign in again."
+      ).toResponse();
     }
 
     const userType: UserType = session.user.type;
@@ -152,6 +179,75 @@ export async function POST(request: Request) {
       });
     }
 
+    // Generate system prompt BEFORE the logging try block so it's always available for streamText
+    const sysPrompt = systemPrompt({ selectedChatModel, requestHints });
+
+    // --- SAIRPG LOGGING INTEGRATION ---
+    // Event logging is non-blocking - if it fails, we log the error but continue with chat
+    // Declare these outside try block so they're accessible in onFinish callback
+    let sessionId: string | undefined;
+    let branchId: string | undefined;
+    
+    try {
+      // 1. Get or create active game session
+      const gameSessions = await getGameSessions({ userId: session.user.id });
+      let gameSession = gameSessions.find(s => s.isActive);
+      
+      if (!gameSession) {
+        const newSession = await createGameSession({
+          userId: session.user.id,
+          title: "New Adventure",
+        });
+        gameSession = newSession;
+      }
+
+      sessionId = gameSession.id;
+      // Use the session's current branch or a fallback if somehow null (shouldn't happen with proper schema/defaults)
+      branchId = gameSession.branchId || generateUUID();
+
+      // 2. Log System Prompt (skip for tool approval flow as we only care about the initial generation or updated generation)
+      
+      await createEventLog({
+        sessionId,
+        branchId,
+        sequenceNum: Date.now().toString(), // Using timestamp as detailed sequence for now
+        eventType: "system_prompt",
+        moduleName: "system",
+        actor: "system",
+        payload: { 
+          prompt: sysPrompt,
+          chatId: id 
+        },
+      });
+
+      // 3. Log User Message as Player Action
+      // We only log this if it's a new user message
+      if (message?.role === "user") {
+        const userText = message.parts
+          .filter(p => p.type === "text")
+          .map(p => (p as { text: string }).text)
+          .join(" ");
+
+        await createEventLog({
+          sessionId,
+          branchId,
+          sequenceNum: Date.now().toString(),
+          eventType: "player_action",
+          moduleName: "player",
+          actor: "player",
+          payload: { 
+            message: userText,
+            chatId: id,
+            messageId: message.id 
+          },
+        });
+      }
+    } catch (error) {
+      // Log error but don't fail the chat request
+      console.error("Failed to log event:", error);
+    }
+    // --- END SAIRPG LOGGING INTEGRATION ---
+
     const streamId = generateUUID();
     await createStreamId({ streamId, chatId: id });
 
@@ -173,7 +269,7 @@ export async function POST(request: Request) {
 
         const result = streamText({
           model: getLanguageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel, requestHints }),
+          system: sysPrompt,
           messages: await convertToModelMessages(uiMessages),
           stopWhen: stepCountIs(5),
           experimental_activeTools: isReasoningModel
@@ -257,6 +353,43 @@ export async function POST(request: Request) {
               chatId: id,
             })),
           });
+
+          // --- SAIRPG LOGGING INTEGRATION ---
+          // 4. Log AI Response as Narrator Response
+          // Only log the assistant's final response
+          if (sessionId && branchId) {
+            try {
+              const assistantMessages = finishedMessages.filter(m => m.role === "assistant");
+              for (const msg of assistantMessages) {
+                const assistantText = msg.parts
+                  .filter(p => p.type === "text")
+                  .map(p => (p as { text: string }).text)
+                  .join(" ");
+
+                if (assistantText) {
+                   // Re-fetch active session just in case, but using captured variables is fine for now
+                   // In a real app we might want to ensure we're on the latest branch if it changed during generation
+                   await createEventLog({
+                     sessionId,
+                     branchId,
+                     sequenceNum: Date.now().toString(),
+                     eventType: "narrator_response",
+                     moduleName: "narrator",
+                     actor: "narrator",
+                     payload: { 
+                       message: assistantText,
+                       chatId: id,
+                       messageId: msg.id
+                     },
+                   });
+                }
+              }
+            } catch (error) {
+              // Log error but don't fail the chat request
+              console.error("Failed to log narrator response event:", error);
+            }
+          }
+           // --- END SAIRPG LOGGING INTEGRATION ---
         }
       },
       onError: () => {

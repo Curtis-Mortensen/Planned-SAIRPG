@@ -2,6 +2,7 @@ import Script from "next/script";
 import { Suspense } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { DataStreamProvider } from "@/components/data-stream-provider";
+import { EnsureUser } from "@/components/ensure-user";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,6 +13,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       />
       <DataStreamProvider>
         <Suspense fallback={<div className="flex h-dvh" />}>
+          <EnsureUser />
           <AppShell>{children}</AppShell>
         </Suspense>
       </DataStreamProvider>
