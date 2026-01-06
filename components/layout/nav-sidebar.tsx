@@ -1,6 +1,7 @@
 "use client";
 
-import { MessageSquare, Settings2, ScrollText, Sliders } from "lucide-react";
+import { Gamepad2 } from "lucide-react";
+import Link from "next/link";
 import {
   Sidebar,
   SidebarContent,
@@ -9,34 +10,8 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { NAVIGATION_ITEMS } from "@/lib/constants/navigation";
 import { NavItem } from "./nav-item";
-
-const navigationItems = [
-  {
-    icon: MessageSquare,
-    label: "Play",
-    route: "/play",
-    testId: "nav-play",
-  },
-  {
-    icon: Settings2,
-    label: "World Editor",
-    route: "/editor",
-    testId: "nav-editor",
-  },
-  {
-    icon: ScrollText,
-    label: "Event Log",
-    route: "/log",
-    testId: "nav-log",
-  },
-  {
-    icon: Sliders,
-    label: "Prompts",
-    route: "/prompts",
-    testId: "nav-prompts",
-  },
-] as const;
 
 export function NavSidebar() {
   const { setOpenMobile } = useSidebar();
@@ -50,23 +25,29 @@ export function NavSidebar() {
     >
       <SidebarHeader>
         <SidebarMenu>
-          <div className="flex items-center justify-center px-2 py-4">
+          <Link
+            className="flex items-center gap-2 px-2 py-4 transition-colors hover:opacity-80"
+            href="/play"
+            onClick={() => setOpenMobile(false)}
+          >
+            <Gamepad2
+              aria-hidden="true"
+              className="size-6 shrink-0 text-primary"
+            />
             <span className="font-semibold text-lg group-data-[collapsible=icon]:hidden">
               SAIRPG
             </span>
-            <span className="font-semibold text-lg group-data-[collapsible=icon]:block hidden">
-              S
-            </span>
-          </div>
+          </Link>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent data-testid="mobile-drawer">
+      <SidebarContent>
         <SidebarMenu>
-          {navigationItems.map((item) => (
+          {NAVIGATION_ITEMS.map((item) => (
             <NavItem
               key={item.route}
               icon={item.icon}
               label={item.label}
+              moduleId={item.id}
               route={item.route}
               testId={item.testId}
               onNavigate={() => setOpenMobile(false)}
@@ -78,4 +59,3 @@ export function NavSidebar() {
     </Sidebar>
   );
 }
-

@@ -8,11 +8,14 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import type { ModuleId } from "@/lib/stores/game-store";
+import { useGameStore } from "@/lib/stores/game-store";
 
 interface NavItemProps {
   icon: LucideIcon;
   label: string;
   route: string;
+  moduleId: ModuleId;
   testId?: string;
   onNavigate?: () => void;
 }
@@ -21,27 +24,38 @@ export function NavItem({
   icon: Icon,
   label,
   route,
+  moduleId,
   testId,
   onNavigate,
 }: NavItemProps) {
   const pathname = usePathname();
   const { state } = useSidebar();
+  const setActiveModule = useGameStore((s) => s.setActiveModule);
+
   const isActive = pathname === route || pathname.startsWith(`${route}/`);
+
+  const handleClick = () => {
+    setActiveModule(moduleId);
+    onNavigate?.();
+  };
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
         asChild
+        data-testid={testId}
         isActive={isActive}
         tooltip={state === "collapsed" ? label : undefined}
-        data-testid={testId}
       >
-        <Link href={route} onClick={onNavigate}>
-          <Icon />
+        <Link
+          aria-current={isActive ? "page" : undefined}
+          href={route}
+          onClick={handleClick}
+        >
+          <Icon aria-hidden="true" />
           <span>{label}</span>
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
 }
-

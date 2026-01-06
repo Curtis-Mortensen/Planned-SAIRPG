@@ -3,7 +3,11 @@ import { Suspense } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { DataStreamProvider } from "@/components/data-stream-provider";
 
-export default function Layout({ children }: { children: React.ReactNode }) {
+export default function PlayLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <>
       <Script
@@ -18,3 +22,4 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     </>
   );
 }
+

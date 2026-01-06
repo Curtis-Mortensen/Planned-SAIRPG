@@ -28,10 +28,8 @@ This document specifies the UI changes needed to transform the Vercel AI Chatbot
 **Navigation Items:**
 | Icon | Label | Route | Description |
 |------|-------|-------|-------------|
-| MessageSquare | Play | `/play` | Main chat interface |
-| Settings2 | World Editor | `/editor` | Behind-the-scenes module config |
-| ScrollText | Event Log | `/log` | Full message history |
-| Sliders | Prompts | `/prompts` | LLM prompt configuration |
+| Gamepad2 | Play | `/play` | Chat interface for game interaction |
+| Settings2 | World Editor | `/editor` | Module config, prompt editor, and event log |
 
 ### 1.2 Component Structure
 
@@ -75,7 +73,7 @@ test.describe("Global Navigation", () => {
   });
 
   test("navigation routes work correctly", async ({ page }) => {
-    await page.goto("/play");
+    await page.goto("/");
     await page.getByTestId("nav-editor").click();
     await expect(page).toHaveURL("/editor");
   });
@@ -89,15 +87,17 @@ test.describe("Global Navigation", () => {
 ### 2.1 Requirements
 
 - Maintain existing chat UI from Vercel template
-- Add collapsible right context pane (320px)
-- Context pane shows: current scene summary, active modules, quick stats
-- Mobile: context pane as bottom sheet
+- Add collapsible right context sidebar (320px)
+- Context sidebar shows: chat cost statistics (total cost, message count, estimated tokens)
+- Toggle button in chat header to open/close context sidebar
+- Mobile: context sidebar as offcanvas (slides in from right)
+- Context sidebar state persisted in game store
 
 **Layout:**
 ```
 ┌─────────────────────────────────────────────────┐
-│ [Nav] │        Chat Area        │ Context Pane │
-│  48px │         flex-1          │    320px     │
+│ [Nav] │        Chat Area        │ Context Sidebar │
+│  48px │         flex-1          │     320px      │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -107,12 +107,14 @@ test.describe("Global Navigation", () => {
 app/
 ├── play/
 │   ├── page.tsx
+│   ├── [id]/page.tsx
 │   └── layout.tsx
 components/
 ├── play/
-│   ├── context-pane.tsx
-│   ├── context-pane-mobile.tsx
-│   └── scene-summary.tsx
+│   ├── context-sidebar.tsx          # Right sidebar wrapper
+│   ├── context-sidebar-toggle.tsx   # Toggle button component
+│   ├── cost-stats.tsx               # Cost statistics display
+│   └── play-chat.tsx                # Chat wrapper with context sidebar
 ```
 
 ### 2.3 Playwright Tests
@@ -128,18 +130,18 @@ test.describe("Play View", () => {
     await expect(page.getByTestId("message-list")).toContainText("tavern");
   });
 
-  test("context pane toggles on desktop", async ({ page }) => {
+  test("context sidebar toggles on desktop", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/play");
-    await page.getByTestId("toggle-context-pane").click();
-    await expect(page.getByTestId("context-pane")).not.toBeVisible();
+    await page.getByTestId("context-sidebar-toggle-button").click();
+    await expect(page.getByTestId("context-sidebar")).not.toBeVisible();
   });
 
-  test("context pane opens as sheet on mobile", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
+  test("context sidebar shows cost stats", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/play");
-    await page.getByTestId("mobile-context-trigger").click();
-    await expect(page.getByTestId("context-sheet")).toBeVisible();
+    await expect(page.getByTestId("context-sidebar")).toBeVisible();
+    await expect(page.getByText("Chat Cost")).toBeVisible();
   });
 });
 ```
@@ -151,10 +153,11 @@ test.describe("Play View", () => {
 ### 3.1 Requirements
 
 **Layout:**
-- Two-panel layout: Module Graph (left/center) + Settings Panel (right)
+- Two-panel layout: Module Graph (left/center) + Right Panel (right)
 - Module Graph: Visual hub-and-spoke diagram
-- Settings Panel: Configuration for selected module
-- Mobile: Full-screen graph, settings as bottom sheet on module tap
+- Right Panel: Tabbed interface with "Prompt Editor" and "Event Log" tabs
+- "Narrator" button: Opens prompt editor for narrator module (switches to Prompt Editor tab)
+- Mobile: Full-screen graph, right panel as bottom sheet
 
 **Module Graph Visualization:**
 - Center: Narrator module (larger, distinct styling)
@@ -176,6 +179,15 @@ Narrator (Hub)
     └── NPCs
 ```
 
+**Right Panel Tabs:**
+- **Prompt Editor Tab:** Module prompt configuration interface
+- **Event Log Tab:** Chronological list of all module communications
+
+**Narrator Button:**
+- Located above or within the module graph area
+- Clicking it selects the Narrator module and switches to the Prompt Editor tab
+- Visually distinct to indicate it's a special action button
+
 ### 3.2 Component Structure
 
 ```
@@ -188,7 +200,11 @@ components/
 │   ├── module-graph.tsx           # Hub-and-spoke visualization
 │   ├── module-node.tsx            # Individual module button
 │   ├── module-connection.tsx      # SVG connection lines
-│   ├── module-settings-panel.tsx  # Right panel container
+│   ├── narrator-button.tsx        # Button to open narrator prompt editor
+│   ├── right-panel.tsx            # Right panel container with tabs
+│   ├── right-panel-tabs.tsx       # Tab switcher (Prompt Editor / Event Log)
+│   ├── prompt-editor-tab.tsx      # Prompt editor content (placeholder for now)
+│   ├── event-log-tab.tsx          # Event log content
 │   ├── settings/
 │   │   ├── narrator-settings.tsx
 │   │   ├── time-settings.tsx
@@ -214,6 +230,51 @@ interface ModuleGraphProps {
 // Ring around center: Other modules positioned by category
 ```
 
+### 3.4 Right Panel Design
+
+```tsx
+// components/editor/right-panel.tsx
+interface RightPanelProps {
+  activeTab: "prompt-editor" | "event-log";
+  selectedModule: ModuleId | null;
+  onTabChange: (tab: "prompt-editor" | "event-log") => void;
+}
+
+// Layout:
+// ┌─────────────────────────────┐
+// │ [Prompt Editor] [Event Log] │  <- Tabs
+// ├─────────────────────────────┤
+// │                             │
+// │   Tab Content Area          │
+// │   (Prompt Editor or Log)    │
+// │                             │
+// └─────────────────────────────┘
+```
+
+**Prompt Editor Tab (Placeholder):**
+- Shows placeholder content: "Prompt Editor for [Module Name]"
+- Will be replaced with full prompt configuration UI in future implementation
+- Displays selected module name
+
+**Event Log Tab:**
+- Full event log interface (see Section 4 for details)
+- Filterable, searchable, expandable entries
+- Timeline scrubber
+
+### 3.5 Narrator Button
+
+```tsx
+// components/editor/narrator-button.tsx
+interface NarratorButtonProps {
+  onOpenPromptEditor: () => void;
+}
+
+// Button that:
+// 1. Selects "narrator" module
+// 2. Switches right panel to "prompt-editor" tab
+// 3. Can be positioned above module graph or as part of graph UI
+```
+
 **Styling Requirements:**
 - Narrator: `bg-primary`, larger size (80x80px)
 - Constraint modules: `bg-amber-500/20 border-amber-500`
@@ -222,7 +283,7 @@ interface ModuleGraphProps {
 - Connection lines: SVG paths with category-matching colors
 - Selected state: Ring highlight + scale animation
 
-### 3.4 Playwright Tests
+### 3.6 Playwright Tests
 
 ```ts
 // tests/editor.spec.ts
@@ -238,12 +299,13 @@ test.describe("World Editor", () => {
     await expect(page.getByTestId("module-npcs")).toBeVisible();
   });
 
-  test("clicking module opens settings panel", async ({ page }) => {
+  test("clicking module opens right panel", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/editor");
     await page.getByTestId("module-time").click();
-    await expect(page.getByTestId("settings-panel")).toBeVisible();
-    await expect(page.getByTestId("settings-panel")).toContainText("Time");
+    await expect(page.getByTestId("right-panel")).toBeVisible();
+    await expect(page.getByTestId("prompt-editor-tab")).toBeVisible();
+    await expect(page.getByTestId("prompt-editor-tab")).toContainText("Time");
   });
 
   test("mobile: module tap opens bottom sheet", async ({ page }) => {
@@ -262,7 +324,7 @@ test.describe("World Editor", () => {
 
 ---
 
-## Section 4: Event Log View
+## Section 4: Event Log Tab (Integrated in World Editor)
 
 ### 4.1 Requirements
 
@@ -280,7 +342,7 @@ test.describe("World Editor", () => {
 - LLM Response
 - Module State Changes
 
-**Layout:**
+**Layout (within right panel tab):**
 ```
 ┌──────────────────────────────────────────────────┐
 │ [Filters Bar]                      [Search]      │
@@ -301,18 +363,16 @@ test.describe("World Editor", () => {
 ### 4.2 Component Structure
 
 ```
-app/
-├── log/
-│   ├── page.tsx
-│   └── layout.tsx
 components/
-├── log/
-│   ├── log-filters.tsx
-│   ├── log-search.tsx
-│   ├── log-timeline.tsx
-│   ├── log-entry.tsx
-│   ├── log-entry-detail.tsx
-│   └── log-list.tsx
+├── editor/
+│   ├── event-log-tab.tsx          # Event log tab content
+│   └── log/                       # Event log components (moved from separate route)
+│       ├── log-filters.tsx
+│       ├── log-search.tsx
+│       ├── log-timeline.tsx
+│       ├── log-entry.tsx
+│       ├── log-entry-detail.tsx
+│       └── log-list.tsx
 ```
 
 ### 4.3 Data Types
@@ -340,165 +400,38 @@ type ModuleId =
   | "npcs";
 ```
 
-### 4.4 Playwright Tests
-
-```ts
-// tests/event-log.spec.ts
-test.describe("Event Log", () => {
-  test("log entries render chronologically", async ({ page }) => {
-    await page.goto("/log");
-    const entries = page.getByTestId("log-entry");
-    await expect(entries.first()).toBeVisible();
-  });
-
-  test("filter by module works", async ({ page }) => {
-    await page.goto("/log");
-    await page.getByTestId("filter-module").click();
-    await page.getByRole("option", { name: "Time" }).click();
-    const entries = page.getByTestId("log-entry");
-    for (const entry of await entries.all()) {
-      await expect(entry).toContainText("Time");
-    }
-  });
-
-  test("search filters entries", async ({ page }) => {
-    await page.goto("/log");
-    await page.getByTestId("log-search").fill("inventory");
-    await expect(page.getByTestId("log-entry")).toContainText("inventory");
-  });
-
-  test("entry expands to show full payload", async ({ page }) => {
-    await page.goto("/log");
-    await page.getByTestId("log-entry").first().click();
-    await expect(page.getByTestId("log-entry-detail")).toBeVisible();
-  });
-
-  test("timeline scrubber navigates to time", async ({ page }) => {
-    await page.goto("/log");
-    const scrubber = page.getByTestId("timeline-scrubber");
-    await scrubber.click({ position: { x: 100, y: 10 } });
-    // Verify scroll position changed
-  });
-});
-```
-
 ---
 
-## Section 5: Prompt Configuration View
+## Section 5: Prompt Editor Tab (Integrated in World Editor)
 
 ### 5.1 Requirements
 
-**Core Principle:** No code editing—all prompt modifications via UI controls
+**Current Implementation (Placeholder):**
+- Shows placeholder content indicating which module's prompt editor is open
+- Displays: "Prompt Editor for [Module Name]"
+- Will be replaced with full prompt configuration UI in future implementation
 
-**Control Types:**
-- **Sliders:** Numeric values (creativity, verbosity, detail level)
-- **Dropdowns:** Preset selections (tone, style, genre)
-- **Toggles:** Boolean flags (include/exclude features)
-- **Tag inputs:** Lists (themes, forbidden topics)
-- **Text areas:** For specific phrases/instructions (limited, guided)
-
-**Per-Module Prompt Settings:**
-
-| Module | Controls |
-|--------|----------|
-| Narrator | Tone (dropdown), Verbosity (slider 1-5), POV (dropdown), Include sensory details (toggle), Themes (tags) |
-| Time | Time passage rate (slider), Date format (dropdown), Announce time changes (toggle) |
-| Inventory | Detail level (slider), Track quantities (toggle), Item categories (tags) |
-| Economics | Currency name (text), Price volatility (slider), Show exact prices (toggle) |
-| NPCs | Personality depth (slider), Memory length (slider), Dialect options (dropdown) |
-| Meta Events | Event frequency (slider), Severity range (slider), Event types (tags) |
+**Future Implementation (Not Yet):**
+- Core Principle: No code editing—all prompt modifications via UI controls
+- Control Types: Sliders, Dropdowns, Toggles, Tag inputs, Text areas
+- Per-module prompt settings (see original Section 5.1 for details)
 
 ### 5.2 Component Structure
 
 ```
-app/
-├── prompts/
-│   ├── page.tsx
-│   └── layout.tsx
 components/
-├── prompts/
-│   ├── prompt-module-list.tsx
-│   ├── prompt-editor.tsx
-│   ├── controls/
-│   │   ├── prompt-slider.tsx
-│   │   ├── prompt-dropdown.tsx
-│   │   ├── prompt-toggle.tsx
-│   │   ├── prompt-tags.tsx
-│   │   └── prompt-textarea.tsx
-│   ├── prompt-preview.tsx         # Shows generated prompt
-│   └── prompt-reset-button.tsx
-```
-
-### 5.3 Prompt Preview
-
-Each settings page should include a read-only preview showing the actual prompt text that will be sent to the LLM, updated live as controls change.
-
-```tsx
-// components/prompts/prompt-preview.tsx
-interface PromptPreviewProps {
-  moduleId: ModuleId;
-  settings: ModuleSettings;
-}
-// Renders the interpolated prompt template
-```
-
-### 5.4 Playwright Tests
-
-```ts
-// tests/prompts.spec.ts
-test.describe("Prompt Configuration", () => {
-  test("module list shows all configurable modules", async ({ page }) => {
-    await page.goto("/prompts");
-    await expect(page.getByTestId("prompt-module-narrator")).toBeVisible();
-    await expect(page.getByTestId("prompt-module-time")).toBeVisible();
-  });
-
-  test("slider changes update preview", async ({ page }) => {
-    await page.goto("/prompts");
-    await page.getByTestId("prompt-module-narrator").click();
-    const slider = page.getByTestId("slider-verbosity");
-    const preview = page.getByTestId("prompt-preview");
-
-    const initialText = await preview.textContent();
-    await slider.fill("5");
-    const updatedText = await preview.textContent();
-
-    expect(initialText).not.toEqual(updatedText);
-  });
-
-  test("dropdown selection persists", async ({ page }) => {
-    await page.goto("/prompts");
-    await page.getByTestId("prompt-module-narrator").click();
-    await page.getByTestId("dropdown-tone").click();
-    await page.getByRole("option", { name: "Humorous" }).click();
-
-    await page.reload();
-    await page.getByTestId("prompt-module-narrator").click();
-    await expect(page.getByTestId("dropdown-tone")).toContainText("Humorous");
-  });
-
-  test("tag input adds and removes tags", async ({ page }) => {
-    await page.goto("/prompts");
-    await page.getByTestId("prompt-module-narrator").click();
-    const tagInput = page.getByTestId("tags-themes");
-
-    await tagInput.getByRole("textbox").fill("mystery");
-    await tagInput.getByRole("textbox").press("Enter");
-    await expect(tagInput.getByText("mystery")).toBeVisible();
-
-    await tagInput.getByText("mystery").getByRole("button").click();
-    await expect(tagInput.getByText("mystery")).not.toBeVisible();
-  });
-
-  test("reset button restores defaults", async ({ page }) => {
-    await page.goto("/prompts");
-    await page.getByTestId("prompt-module-narrator").click();
-    await page.getByTestId("slider-verbosity").fill("5");
-    await page.getByTestId("reset-button").click();
-
-    await expect(page.getByTestId("slider-verbosity")).toHaveValue("3");
-  });
-});
+├── editor/
+│   ├── prompt-editor-tab.tsx      # Prompt editor tab content (placeholder)
+│   └── prompts/                   # Future prompt components (not yet implemented)
+│       ├── prompt-editor.tsx
+│       ├── controls/
+│       │   ├── prompt-slider.tsx
+│       │   ├── prompt-dropdown.tsx
+│       │   ├── prompt-toggle.tsx
+│       │   ├── prompt-tags.tsx
+│       │   └── prompt-textarea.tsx
+│       ├── prompt-preview.tsx
+│       └── prompt-reset-button.tsx
 ```
 
 ---
@@ -512,12 +445,12 @@ test.describe("Prompt Configuration", () => {
 // lib/stores/game-store.ts
 interface GameStore {
   // Navigation
-  currentView: "play" | "editor" | "log" | "prompts";
   sidebarExpanded: boolean;
   contextPaneOpen: boolean;
 
   // Editor
   selectedModule: ModuleId | null;
+  rightPanelTab: "prompt-editor" | "event-log";
 
   // Module Settings
   moduleSettings: Record<ModuleId, ModuleSettings>;
@@ -526,8 +459,9 @@ interface GameStore {
   logFilters: LogFilters;
 
   // Actions
-  setView: (view: GameStore["currentView"]) => void;
   selectModule: (id: ModuleId | null) => void;
+  setRightPanelTab: (tab: "prompt-editor" | "event-log") => void;
+  openNarratorPromptEditor: () => void; // Sets module to narrator and switches to prompt editor tab
   updateModuleSettings: (id: ModuleId, settings: Partial<ModuleSettings>) => void;
 }
 ```
@@ -565,8 +499,8 @@ interface GameStore {
 import AxeBuilder from "@axe-core/playwright";
 
 test.describe("Accessibility", () => {
-  test("play view has no critical violations", async ({ page }) => {
-    await page.goto("/play");
+  test("editor view has no critical violations", async ({ page }) => {
+    await page.goto("/editor");
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations.filter((v) => v.impact === "critical")).toEqual(
       []
@@ -578,7 +512,8 @@ test.describe("Accessibility", () => {
     await page.keyboard.press("Tab");
     await expect(page.getByTestId("module-narrator")).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("settings-panel")).toBeVisible();
+    await expect(page.getByTestId("right-panel")).toBeVisible();
+    await expect(page.getByTestId("prompt-editor-tab")).toBeVisible();
   });
 });
 ```
@@ -587,14 +522,18 @@ test.describe("Accessibility", () => {
 
 ## Implementation Order
 
-1. **Section 1:** Global Navigation Shell
-2. **Section 2:** Play View modifications
-3. **Section 3:** World Editor View
-4. **Section 4:** Event Log View
-5. **Section 5:** Prompt Configuration View
-6. **Section 6:** State Management integration
+1. **Section 1:** Global Navigation Shell (World Editor only)
+2. **Section 3:** World Editor View
+   - Module graph
+   - Right panel with tabs
+   - Narrator button
+   - Prompt editor tab (placeholder)
+   - Event log tab
+3. **Section 4:** Event Log Tab (integrated in editor)
+4. **Section 5:** Prompt Editor Tab (placeholder first, full implementation later)
+5. **Section 6:** State Management integration
 
-Each section can be implemented independently and tested before moving to the next.
+Note: Section 2 (Play View) can be implemented separately if needed for the main chat interface.
 
 ---
 
