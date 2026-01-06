@@ -4,6 +4,8 @@
 
 ---
 
+Updated - how do I run ingest locally, and how do save states work given that it's immutable. How do we handle branching saves and listing what's been overwritten. Then how do we add resuming to older branches - duplication I'm guessing? We should probably add imports and exports too as well 
+
 ## 1. Agent Workers — Where Do They Run?
 
 The agent workers (Action Evaluator, Narrator, etc.) need to consume events from Redis Streams and process them. Three main architectural options:
