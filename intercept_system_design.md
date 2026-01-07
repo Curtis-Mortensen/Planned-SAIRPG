@@ -1,871 +1,3 @@
-# Meta event module system design
-_Exported on 1/7/2026 at 10:41:10 MST from Cursor (2.2.44)_
-
----
-
-**User**
-
-I want you to plan out all of the code changes that are going to be necessary to create the meta event module. The module needs to... Suggest events every time the player submits an action. Okay. Okay, I think we actually need to have a layer of, System logic in between the user and the AI. The flow should look something like this. When the user loads a new game, they're asked what they want to do. If they submit something like gather wood, then the system needs to step in and intercept that. Gather wood needs to be sent to the validator and tick modules. And then that information is returned back to the system. Then the system needs to send. That to the meta event module which needs to return a. List of possible events that could happen to the player while they're trying to gather wood. The system then needs to display those events to the user with. A message something like. Awesome. Before you gather wood. Please review the following possible events that could happen. Then the player needs to go through the accept. Reject. Regenerate. Flow and the final accepted events need to be stored in. The database. Finally, after all of that is done, the. System needs to roll for probability and. Figure out which events happen to the player while they're trying to gather wood. Then the system needs to be able to go through those events with the player, and then and only then can the player actually attempt to roll for gathering wood. As the system is going through those events with the player. The system shouldn't create anymore meta events. However, the system needs a way to track. When the player has finished the gathering would events and actually tried to gather wood, because then afterwards the system needs to ask the user again what they want to do next and the whole cycle needs to repeat. I want you to talk with me about what that could look like, from a high level conceptual view. In addition, I want to build this system with future expandability so that we can eventually get it to trigger combat, which will be processed in another way, and have the system keep track of when we're inside and outside combat, the same way as when we're inside and outside the events happening in the story
-
----
-
-**Cursor**
-
-Let me explore your codebase to understand the current architecture before discussing the meta event module design.
-
-Now I have a solid understanding of your system architecture. Let me put together a comprehensive conceptual plan for the Meta Event Module.
-
----
-
-# Meta Event Module: High-Level Conceptual Design
-
-## 1. The Core Problem
-
-You need a **system orchestration layer** that intercepts player actions and manages a multi-phase flow before the action actually resolves. This isn't just about generating events—it's about creating a **state machine** that tracks where the player is in the action lifecycle.
-
-## 2. The State Machine Concept
-
-At the heart of this system is a **Game Phase State Machine**. Think of it like this:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         GAME PHASE STATE MACHINE                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌──────────┐      ┌──────────────┐      ┌────────────────┐                │
-│  │  IDLE    │──────▶  VALIDATING  │──────▶  META_PROPOSAL │                │
-│  │ (awaiting│      │  (validator  │      │  (generating   │                │
-│  │  input)  │      │   + tick)    │      │   events)      │                │
-│  └──────────┘      └──────────────┘      └───────┬────────┘                │
-│       ▲                                          │                          │
-│       │                                          ▼                          │
-│       │                                 ┌────────────────┐                  │
-│       │                                 │  META_REVIEW   │◀─┐               │
-│       │                                 │ (player sees   │  │ (regenerate)  │
-│       │                                 │  events)       │──┘               │
-│       │                                 └───────┬────────┘                  │
-│       │                                         │ (accept)                  │
-│       │                                         ▼                          │
-│       │                                 ┌────────────────┐                  │
-│       │                                 │ PROBABILITY    │                  │
-│       │                                 │ ROLL           │                  │
-│       │                                 │ (which events  │                  │
-│       │                                 │  trigger?)     │                  │
-│       │                                 └───────┬────────┘                  │
-│       │                                         │                          │
-│       │                         ┌───────────────┴───────────────┐          │
-│       │                         ▼                               ▼          │
-│       │                 ┌────────────────┐             ┌────────────────┐  │
-│       │                 │ IN_META_EVENT  │             │ RESOLVING      │  │
-│       │                 │ (playing thru  │──(loop)────▶│ ACTION         │  │
-│       │                 │  triggered     │             │ (original      │  │
-│       │                 │  events)       │             │  action)       │  │
-│       │                 └────────────────┘             └───────┬────────┘  │
-│       │                         │                              │           │
-│       │                         │ (event requires combat)      │           │
-│       │                         ▼                              │           │
-│       │                 ┌────────────────┐                     │           │
-│       │                 │  IN_COMBAT     │                     │           │
-│       │                 │  (future)      │                     │           │
-│       │                 └────────┬───────┘                     │           │
-│       │                          │                             │           │
-│       └──────────────────────────┴─────────────────────────────┘           │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### State Definitions
-
-| State | Description | Who's in Control |
-|-------|-------------|------------------|
-| `IDLE` | Waiting for player to submit an action | Player |
-| `VALIDATING` | Running validator + tick modules | System |
-| `META_PROPOSAL` | AI generating possible events | System |
-| `META_REVIEW` | Player reviewing/accepting/rejecting events | Player |
-| `PROBABILITY_ROLL` | System rolling dice for each accepted event | System |
-| `IN_META_EVENT` | Playing through triggered events | Player + Narrator |
-| `IN_COMBAT` | Combat subsystem active (future) | Player + Combat System |
-| `RESOLVING_ACTION` | Finally resolving the original action | System + Narrator |
-
-## 3. The "Pending Action" Pattern
-
-The key insight is that when a player submits "gather wood", that action is **not executed immediately**. Instead:
-
-```typescript
-interface PendingAction {
-  id: string;
-  gameId: string;
-  originalInput: string;           // "gather wood"
-  validatedAt: Date;
-  timeEstimate: TimeValue;         // From tick module
-  phase: GamePhase;
-  proposedEvents: MetaEvent[];     // Generated by meta module
-  reviewedEvents: ReviewedEvent[]; // After accept/reject
-  triggeredEvents: MetaEvent[];    // After probability roll
-  currentEventIndex: number;       // Which event are we resolving?
-  createdAt: Date;
-}
-```
-
-This **pending action** persists until the entire flow completes.
-
-## 4. Meta Event Structure
-
-Each meta event generated by the AI should have:
-
-```typescript
-interface MetaEvent {
-  id: string;
-  type: MetaEventType;           // 'encounter', 'discovery', 'hazard', 'opportunity'
-  title: string;                 // "Wandering Merchant"
-  description: string;           // Brief description for player
-  probability: number;           // 0.0 to 1.0 (suggested by AI)
-  severity: 'minor' | 'moderate' | 'major';
-  triggersCombat: boolean;       // Flag for future combat system
-  timeImpact: TimeValue | null;  // Additional time if triggered
-}
-
-interface ReviewedEvent extends MetaEvent {
-  playerDecision: 'accepted' | 'rejected';
-  reviewedAt: Date;
-}
-
-interface TriggeredEvent extends MetaEvent {
-  rollResult: number;            // The actual dice roll
-  triggered: boolean;            // Did it happen?
-  resolvedAt?: Date;
-}
-```
-
-## 5. The Flow in Detail
-
-### Phase 1: Validation (Already Planned)
-Your validator-modules.md covers this. The action goes through:
-1. Input validation (is it valid?)
-2. Time estimation (how long will it take?)
-
-### Phase 2: Meta Event Proposal
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                    META EVENT PROPOSAL PHASE                         │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  Input to Meta Event Module:                                         │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │ • Player's intended action: "gather wood"                   │     │
-│  │ • Time estimate: "2 hours"                                  │     │
-│  │ • Current location context                                  │     │
-│  │ • Current character state                                   │     │
-│  │ • Recent story events                                       │     │
-│  │ • World state (time of day, weather, etc.)                 │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                               │                                      │
-│                               ▼                                      │
-│                        ┌─────────────┐                               │
-│                        │   META      │                               │
-│                        │   EVENT     │                               │
-│                        │   MODULE    │                               │
-│                        │   (LLM)     │                               │
-│                        └──────┬──────┘                               │
-│                               │                                      │
-│                               ▼                                      │
-│  Output: 2-4 possible events                                        │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │ 1. "You hear rustling in the bushes nearby"                │     │
-│  │    - Type: encounter, Probability: 0.3, Severity: minor    │     │
-│  │                                                             │     │
-│  │ 2. "A merchant's cart passes by on the nearby road"        │     │
-│  │    - Type: opportunity, Probability: 0.2, Severity: minor  │     │
-│  │                                                             │     │
-│  │ 3. "You find unusual mushrooms growing on a fallen log"    │     │
-│  │    - Type: discovery, Probability: 0.4, Severity: minor    │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-### Phase 3: Player Review UI
-
-This is crucial for player agency. The UI could look like:
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Before you gather wood, the following things might happen...        │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ ⚔️ Rustling in the Bushes                        [30% chance]│   │
-│  │ You hear something moving in the undergrowth nearby.         │   │
-│  │                                                               │   │
-│  │ [ ✓ Accept ]  [ ✗ Reject ]                                   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ 🛒 Passing Merchant                              [20% chance]│   │
-│  │ A merchant's cart passes by on the nearby road.              │   │
-│  │                                                               │   │
-│  │ [ ✓ Accept ]  [ ✗ Reject ]                                   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ 🍄 Unusual Discovery                             [40% chance]│   │
-│  │ You find unusual mushrooms growing on a fallen log.          │   │
-│  │                                                               │   │
-│  │ [ ✓ Accept ]  [ ✗ Reject ]                                   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │  [ 🔄 Regenerate All ]       [ ▶️ Confirm & Continue ]        │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-### Phase 4: Probability Roll
-
-After acceptance, the system rolls for each accepted event:
-
-```typescript
-function rollForEvents(acceptedEvents: ReviewedEvent[]): TriggeredEvent[] {
-  return acceptedEvents
-    .filter(e => e.playerDecision === 'accepted')
-    .map(event => {
-      const roll = Math.random();
-      return {
-        ...event,
-        rollResult: roll,
-        triggered: roll <= event.probability,
-      };
-    });
-}
-```
-
-### Phase 5: Event Resolution
-
-For each triggered event (in order), the system:
-1. Presents the event to the player
-2. Lets the Narrator describe what happens
-3. Allows player response/action within the event
-4. **Does NOT generate new meta events during event resolution**
-5. Marks event as resolved when complete
-
-### Phase 6: Original Action Resolution
-
-Only after all events are resolved does the player's original "gather wood" action actually execute through the Narrator.
-
-## 6. Database Schema Additions
-
-```sql
--- Pending Actions table
-CREATE TABLE "PendingAction" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "gameId" uuid NOT NULL REFERENCES "GameSession"("id") ON DELETE CASCADE,
-  "chatId" uuid NOT NULL REFERENCES "Chat"("id"),
-  "originalInput" text NOT NULL,
-  "timeEstimate" varchar(50),
-  "phase" varchar(50) NOT NULL DEFAULT 'validating',
-  "currentEventIndex" integer DEFAULT 0,
-  "createdAt" timestamp NOT NULL DEFAULT NOW(),
-  "updatedAt" timestamp NOT NULL DEFAULT NOW()
-);
-
--- Meta Events table
-CREATE TABLE "MetaEvent" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "pendingActionId" uuid NOT NULL REFERENCES "PendingAction"("id") ON DELETE CASCADE,
-  "type" varchar(50) NOT NULL,        -- 'encounter', 'discovery', 'hazard', 'opportunity'
-  "title" varchar(255) NOT NULL,
-  "description" text NOT NULL,
-  "probability" real NOT NULL,         -- 0.0 to 1.0
-  "severity" varchar(20) NOT NULL,     -- 'minor', 'moderate', 'major'
-  "triggersCombat" boolean DEFAULT false,
-  "timeImpact" varchar(50),
-  "playerDecision" varchar(20),        -- 'accepted', 'rejected', null
-  "rollResult" real,                   -- The actual roll
-  "triggered" boolean,                 -- Did it happen?
-  "resolvedAt" timestamp,
-  "createdAt" timestamp NOT NULL DEFAULT NOW()
-);
-```
-
-## 7. Integration with Existing Architecture
-
-Your existing Inngest workflow becomes more sophisticated:
-
-```typescript
-// lib/inngest/functions.ts - Enhanced
-
-export const gameLoopWorkflow = inngest.createFunction(
-  { id: 'game-loop-main' },
-  { event: GameEvents.PLAYER_ACTION_SUBMITTED },
-  async ({ event, step }) => {
-    const { gameId, chatId, playerInput } = event.data;
-
-    // Step 1: Validate input (existing)
-    const validation = await step.run('validate-input', async () => {
-      return await callValidatorModules(playerInput, context);
-    });
-
-    if (!validation.isValid) {
-      return { success: false, error: validation.error };
-    }
-
-    // Step 2: Create pending action
-    const pendingAction = await step.run('create-pending-action', async () => {
-      return await createPendingAction({
-        gameId,
-        chatId,
-        originalInput: playerInput,
-        timeEstimate: validation.timeEstimate,
-        phase: 'meta_proposal',
-      });
-    });
-
-    // Step 3: Generate meta events
-    const metaEvents = await step.run('generate-meta-events', async () => {
-      return await callMetaEventModule({
-        playerInput,
-        timeEstimate: validation.timeEstimate,
-        context: await getGameContext(gameId),
-      });
-    });
-
-    // Step 4: Store proposed events and wait for player review
-    await step.run('store-proposed-events', async () => {
-      await storeMetaEvents(pendingAction.id, metaEvents);
-      await updatePendingAction(pendingAction.id, { phase: 'meta_review' });
-    });
-
-    // Step 5: Wait for player review (this pauses the workflow)
-    await step.waitForEvent('await-player-review', {
-      event: GameEvents.META_EVENTS_REVIEWED,
-      match: 'data.pendingActionId',
-      timeout: '30m',
-    });
-
-    // ... continue with probability roll, event resolution, etc.
-  }
-);
-```
-
-## 8. The "In-Event" Flag: Preventing Recursive Meta Events
-
-This is critical. You need a way to know when the player is "inside" an event vs. normal play:
-
-```typescript
-interface GameContext {
-  // ... existing fields
-  
-  // Meta event state
-  currentPendingAction: PendingAction | null;
-  isInMetaEvent: boolean;                    // True when resolving events
-  currentMetaEvent: TriggeredEvent | null;   // Which event we're in
-  
-  // Future: Combat state
-  isInCombat: boolean;
-  currentCombat: CombatState | null;
-}
-```
-
-When `isInMetaEvent` is true, the system:
-- Does NOT call the Meta Event Module
-- Routes actions directly to Narrator
-- Tracks when the event narrative is "complete"
-
-## 9. Future Expandability: Combat Mode
-
-The same pattern extends naturally to combat:
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                     COMBAT STATE (FUTURE)                            │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  When a meta event has triggersCombat: true                          │
-│                                                                      │
-│  ┌─────────────────┐                                                 │
-│  │  IN_META_EVENT  │                                                 │
-│  │  (event has     │                                                 │
-│  │  triggersCombat)│                                                 │
-│  └────────┬────────┘                                                 │
-│           │                                                          │
-│           ▼                                                          │
-│  ┌─────────────────┐     ┌──────────────────┐                       │
-│  │  COMBAT_START   │────▶│   IN_COMBAT      │◀──┐                   │
-│  │  (initialize    │     │   (turn-based    │   │ (combat           │
-│  │   combat state) │     │    combat loop)  │───┘  continues)       │
-│  └─────────────────┘     └────────┬─────────┘                       │
-│                                   │                                  │
-│                          (combat ends)                               │
-│                                   │                                  │
-│                                   ▼                                  │
-│                          ┌─────────────────┐                        │
-│                          │  COMBAT_END     │                        │
-│                          │  (back to meta  │                        │
-│                          │   event or next │                        │
-│                          │   event)        │                        │
-│                          └─────────────────┘                        │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-The combat system would have its own:
-- State machine
-- Turn tracking
-- Action validation (combat-specific)
-- Resolution rules
-
-But it plugs into the same orchestration layer.
-
-## 10. Key Design Principles
-
-### Principle 1: Single Source of Truth for Phase
-The `PendingAction.phase` field is authoritative. The UI reads this to know what to display.
-
-### Principle 2: Events are Immutable Once Created
-Once meta events are generated, they're stored. Regeneration creates NEW events, doesn't modify existing ones (for audit trail).
-
-### Principle 3: The Narrator Doesn't Know About Phases
-The Narrator module just receives context and produces narrative. It doesn't need to know about meta events, combat, etc. The **orchestration layer** manages phase transitions.
-
-### Principle 4: Client-Server Phase Sync
-The client polls or subscribes to phase changes. When phase changes from `meta_proposal` to `meta_review`, the UI updates to show the review interface.
-
-## 11. Implementation Phases
-
-### Phase A: Foundation (Meta Event Core)
-1. Add `PendingAction` and `MetaEvent` tables
-2. Create state machine types and helpers
-3. Add `phase` tracking to game context
-4. Create Meta Event Module LLM prompt
-
-### Phase B: Proposal Flow
-1. Modify chat route to intercept actions
-2. Create pending action on submission
-3. Call meta event module
-4. Store proposed events
-
-### Phase C: Review UI
-1. Create meta event review component
-2. Add accept/reject/regenerate handlers
-3. Sync review state to database
-4. Create "Confirm & Continue" flow
-
-### Phase D: Resolution Flow
-1. Implement probability rolling
-2. Create event resolution loop
-3. Add `isInMetaEvent` context tracking
-4. Implement event completion detection
-
-### Phase E: Original Action Resolution
-1. Complete the loop back to original action
-2. Reset to IDLE state
-3. Handle edge cases (cancel, timeout, etc.)
-
-### Phase F: Combat Foundation (Future)
-1. Add combat state fields
-2. Create combat module skeleton
-3. Add combat trigger detection
-4. Implement combat ↔ event transitions
-
----
-
-## 12. Files You'll Need to Create/Modify
-
-### New Files
-```
-lib/meta-events/
-├── types.ts                    # MetaEvent, PendingAction, GamePhase types
-├── state-machine.ts            # Phase transition logic
-├── meta-event-module.ts        # LLM call for generating events
-├── probability.ts              # Dice rolling logic
-└── prompts/
-    └── meta-event-prompt.ts    # System prompt for meta module
-
-components/play/
-├── meta-event-review.tsx       # Review UI component
-├── meta-event-card.tsx         # Individual event card
-└── event-resolution-view.tsx   # In-event narrative view
-
-lib/db/
-├── migrations/00XX_meta_events.sql
-└── (updates to queries.ts, schema.ts)
-
-lib/inngest/
-└── (updates to functions.ts for new workflow steps)
-```
-
-### Modified Files
-```
-app/(chat)/api/chat/route.ts    # Intercept and check phase
-lib/db/schema.ts                # Add new tables
-lib/db/queries.ts               # Add CRUD for meta events
-lib/stores/game-store.ts        # Add phase tracking state
-lib/inngest/functions.ts        # Expand workflow
-components/play/play-chat.tsx   # Conditionally show review UI
-```
-
----
-
-Would you like me to dive deeper into any specific part of this architecture? I can also draft the actual prompts for the Meta Event Module, or detail the UI component structure for the review flow.
-
-```plaintext
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         GAME PHASE STATE MACHINE                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌──────────┐      ┌──────────────┐      ┌────────────────┐                │
-│  │  IDLE    │──────▶  VALIDATING  │──────▶  META_PROPOSAL │                │
-│  │ (awaiting│      │  (validator  │      │  (generating   │                │
-│  │  input)  │      │   + tick)    │      │   events)      │                │
-│  └──────────┘      └──────────────┘      └───────┬────────┘                │
-│       ▲                                          │                          │
-│       │                                          ▼                          │
-│       │                                 ┌────────────────┐                  │
-│       │                                 │  META_REVIEW   │◀─┐               │
-│       │                                 │ (player sees   │  │ (regenerate)  │
-│       │                                 │  events)       │──┘               │
-│       │                                 └───────┬────────┘                  │
-│       │                                         │ (accept)                  │
-│       │                                         ▼                          │
-│       │                                 ┌────────────────┐                  │
-│       │                                 │ PROBABILITY    │                  │
-│       │                                 │ ROLL           │                  │
-│       │                                 │ (which events  │                  │
-│       │                                 │  trigger?)     │                  │
-│       │                                 └───────┬────────┘                  │
-│       │                                         │                          │
-│       │                         ┌───────────────┴───────────────┐          │
-│       │                         ▼                               ▼          │
-│       │                 ┌────────────────┐             ┌────────────────┐  │
-│       │                 │ IN_META_EVENT  │             │ RESOLVING      │  │
-│       │                 │ (playing thru  │──(loop)────▶│ ACTION         │  │
-│       │                 │  triggered     │             │ (original      │  │
-│       │                 │  events)       │             │  action)       │  │
-│       │                 └────────────────┘             └───────┬────────┘  │
-│       │                         │                              │           │
-│       │                         │ (event requires combat)      │           │
-│       │                         ▼                              │           │
-│       │                 ┌────────────────┐                     │           │
-│       │                 │  IN_COMBAT     │                     │           │
-│       │                 │  (future)      │                     │           │
-│       │                 └────────┬───────┘                     │           │
-│       │                          │                             │           │
-│       └──────────────────────────┴─────────────────────────────┘           │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-```typescript
-interface PendingAction {
-  id: string;
-  gameId: string;
-  originalInput: string;           // "gather wood"
-  validatedAt: Date;
-  timeEstimate: TimeValue;         // From tick module
-  phase: GamePhase;
-  proposedEvents: MetaEvent[];     // Generated by meta module
-  reviewedEvents: ReviewedEvent[]; // After accept/reject
-  triggeredEvents: MetaEvent[];    // After probability roll
-  currentEventIndex: number;       // Which event are we resolving?
-  createdAt: Date;
-}
-```
-
-```typescript
-interface MetaEvent {
-  id: string;
-  type: MetaEventType;           // 'encounter', 'discovery', 'hazard', 'opportunity'
-  title: string;                 // "Wandering Merchant"
-  description: string;           // Brief description for player
-  probability: number;           // 0.0 to 1.0 (suggested by AI)
-  severity: 'minor' | 'moderate' | 'major';
-  triggersCombat: boolean;       // Flag for future combat system
-  timeImpact: TimeValue | null;  // Additional time if triggered
-}
-
-interface ReviewedEvent extends MetaEvent {
-  playerDecision: 'accepted' | 'rejected';
-  reviewedAt: Date;
-}
-
-interface TriggeredEvent extends MetaEvent {
-  rollResult: number;            // The actual dice roll
-  triggered: boolean;            // Did it happen?
-  resolvedAt?: Date;
-}
-```
-
-```plaintext
-┌──────────────────────────────────────────────────────────────────────┐
-│                    META EVENT PROPOSAL PHASE                         │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  Input to Meta Event Module:                                         │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │ • Player's intended action: "gather wood"                   │     │
-│  │ • Time estimate: "2 hours"                                  │     │
-│  │ • Current location context                                  │     │
-│  │ • Current character state                                   │     │
-│  │ • Recent story events                                       │     │
-│  │ • World state (time of day, weather, etc.)                 │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                               │                                      │
-│                               ▼                                      │
-│                        ┌─────────────┐                               │
-│                        │   META      │                               │
-│                        │   EVENT     │                               │
-│                        │   MODULE    │                               │
-│                        │   (LLM)     │                               │
-│                        └──────┬──────┘                               │
-│                               │                                      │
-│                               ▼                                      │
-│  Output: 2-4 possible events                                        │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │ 1. "You hear rustling in the bushes nearby"                │     │
-│  │    - Type: encounter, Probability: 0.3, Severity: minor    │     │
-│  │                                                             │     │
-│  │ 2. "A merchant's cart passes by on the nearby road"        │     │
-│  │    - Type: opportunity, Probability: 0.2, Severity: minor  │     │
-│  │                                                             │     │
-│  │ 3. "You find unusual mushrooms growing on a fallen log"    │     │
-│  │    - Type: discovery, Probability: 0.4, Severity: minor    │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-```plaintext
-┌──────────────────────────────────────────────────────────────────────┐
-│  Before you gather wood, the following things might happen...        │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ ⚔️ Rustling in the Bushes                        [30% chance]│   │
-│  │ You hear something moving in the undergrowth nearby.         │   │
-│  │                                                               │   │
-│  │ [ ✓ Accept ]  [ ✗ Reject ]                                   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ 🛒 Passing Merchant                              [20% chance]│   │
-│  │ A merchant's cart passes by on the nearby road.              │   │
-│  │                                                               │   │
-│  │ [ ✓ Accept ]  [ ✗ Reject ]                                   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ 🍄 Unusual Discovery                             [40% chance]│   │
-│  │ You find unusual mushrooms growing on a fallen log.          │   │
-│  │                                                               │   │
-│  │ [ ✓ Accept ]  [ ✗ Reject ]                                   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │  [ 🔄 Regenerate All ]       [ ▶️ Confirm & Continue ]        │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-```typescript
-function rollForEvents(acceptedEvents: ReviewedEvent[]): TriggeredEvent[] {
-  return acceptedEvents
-    .filter(e => e.playerDecision === 'accepted')
-    .map(event => {
-      const roll = Math.random();
-      return {
-        ...event,
-        rollResult: roll,
-        triggered: roll <= event.probability,
-      };
-    });
-}
-```
-
-```sql
--- Pending Actions table
-CREATE TABLE "PendingAction" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "gameId" uuid NOT NULL REFERENCES "GameSession"("id") ON DELETE CASCADE,
-  "chatId" uuid NOT NULL REFERENCES "Chat"("id"),
-  "originalInput" text NOT NULL,
-  "timeEstimate" varchar(50),
-  "phase" varchar(50) NOT NULL DEFAULT 'validating',
-  "currentEventIndex" integer DEFAULT 0,
-  "createdAt" timestamp NOT NULL DEFAULT NOW(),
-  "updatedAt" timestamp NOT NULL DEFAULT NOW()
-);
-
--- Meta Events table
-CREATE TABLE "MetaEvent" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "pendingActionId" uuid NOT NULL REFERENCES "PendingAction"("id") ON DELETE CASCADE,
-  "type" varchar(50) NOT NULL,        -- 'encounter', 'discovery', 'hazard', 'opportunity'
-  "title" varchar(255) NOT NULL,
-  "description" text NOT NULL,
-  "probability" real NOT NULL,         -- 0.0 to 1.0
-  "severity" varchar(20) NOT NULL,     -- 'minor', 'moderate', 'major'
-  "triggersCombat" boolean DEFAULT false,
-  "timeImpact" varchar(50),
-  "playerDecision" varchar(20),        -- 'accepted', 'rejected', null
-  "rollResult" real,                   -- The actual roll
-  "triggered" boolean,                 -- Did it happen?
-  "resolvedAt" timestamp,
-  "createdAt" timestamp NOT NULL DEFAULT NOW()
-);
-```
-
-```typescript
-// lib/inngest/functions.ts - Enhanced
-
-export const gameLoopWorkflow = inngest.createFunction(
-  { id: 'game-loop-main' },
-  { event: GameEvents.PLAYER_ACTION_SUBMITTED },
-  async ({ event, step }) => {
-    const { gameId, chatId, playerInput } = event.data;
-
-    // Step 1: Validate input (existing)
-    const validation = await step.run('validate-input', async () => {
-      return await callValidatorModules(playerInput, context);
-    });
-
-    if (!validation.isValid) {
-      return { success: false, error: validation.error };
-    }
-
-    // Step 2: Create pending action
-    const pendingAction = await step.run('create-pending-action', async () => {
-      return await createPendingAction({
-        gameId,
-        chatId,
-        originalInput: playerInput,
-        timeEstimate: validation.timeEstimate,
-        phase: 'meta_proposal',
-      });
-    });
-
-    // Step 3: Generate meta events
-    const metaEvents = await step.run('generate-meta-events', async () => {
-      return await callMetaEventModule({
-        playerInput,
-        timeEstimate: validation.timeEstimate,
-        context: await getGameContext(gameId),
-      });
-    });
-
-    // Step 4: Store proposed events and wait for player review
-    await step.run('store-proposed-events', async () => {
-      await storeMetaEvents(pendingAction.id, metaEvents);
-      await updatePendingAction(pendingAction.id, { phase: 'meta_review' });
-    });
-
-    // Step 5: Wait for player review (this pauses the workflow)
-    await step.waitForEvent('await-player-review', {
-      event: GameEvents.META_EVENTS_REVIEWED,
-      match: 'data.pendingActionId',
-      timeout: '30m',
-    });
-
-    // ... continue with probability roll, event resolution, etc.
-  }
-);
-```
-
-```typescript
-interface GameContext {
-  // ... existing fields
-  
-  // Meta event state
-  currentPendingAction: PendingAction | null;
-  isInMetaEvent: boolean;                    // True when resolving events
-  currentMetaEvent: TriggeredEvent | null;   // Which event we're in
-  
-  // Future: Combat state
-  isInCombat: boolean;
-  currentCombat: CombatState | null;
-}
-```
-
-```plaintext
-┌──────────────────────────────────────────────────────────────────────┐
-│                     COMBAT STATE (FUTURE)                            │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  When a meta event has triggersCombat: true                          │
-│                                                                      │
-│  ┌─────────────────┐                                                 │
-│  │  IN_META_EVENT  │                                                 │
-│  │  (event has     │                                                 │
-│  │  triggersCombat)│                                                 │
-│  └────────┬────────┘                                                 │
-│           │                                                          │
-│           ▼                                                          │
-│  ┌─────────────────┐     ┌──────────────────┐                       │
-│  │  COMBAT_START   │────▶│   IN_COMBAT      │◀──┐                   │
-│  │  (initialize    │     │   (turn-based    │   │ (combat           │
-│  │   combat state) │     │    combat loop)  │───┘  continues)       │
-│  └─────────────────┘     └────────┬─────────┘                       │
-│                                   │                                  │
-│                          (combat ends)                               │
-│                                   │                                  │
-│                                   ▼                                  │
-│                          ┌─────────────────┐                        │
-│                          │  COMBAT_END     │                        │
-│                          │  (back to meta  │                        │
-│                          │   event or next │                        │
-│                          │   event)        │                        │
-│                          └─────────────────┘                        │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-```plaintext
-lib/meta-events/
-├── types.ts                    # MetaEvent, PendingAction, GamePhase types
-├── state-machine.ts            # Phase transition logic
-├── meta-event-module.ts        # LLM call for generating events
-├── probability.ts              # Dice rolling logic
-└── prompts/
-    └── meta-event-prompt.ts    # System prompt for meta module
-
-components/play/
-├── meta-event-review.tsx       # Review UI component
-├── meta-event-card.tsx         # Individual event card
-└── event-resolution-view.tsx   # In-event narrative view
-
-lib/db/
-├── migrations/00XX_meta_events.sql
-└── (updates to queries.ts, schema.ts)
-
-lib/inngest/
-└── (updates to functions.ts for new workflow steps)
-```
-
-```plaintext
-app/(chat)/api/chat/route.ts    # Intercept and check phase
-lib/db/schema.ts                # Add new tables
-lib/db/queries.ts               # Add CRUD for meta events
-lib/stores/game-store.ts        # Add phase tracking state
-lib/inngest/functions.ts        # Expand workflow
-components/play/play-chat.tsx   # Conditionally show review UI
-```
-
----
-
-**User**
-
-Great. I copied our chat over to @intercept_system_design.md - I want you to sketch out the code that's going to be needed (I actually want to build this before the validator) for another AI to build. Write the minimal amount of code you can to give clear instructions, so the other AI doesn't have to make any big decisions on it's own (I trust your engineering). skip the code for the validating modules, and the actual code for the meta proposal and review and probability. Those are gonna be separate. But sketch out what's necessary just ot create the state machine itself
-
----
-
-**Cursor**
-
-I'll sketch out the minimal state machine foundation code. This is the "bones" that everything else will be built on.
-
----
-
 # State Machine Foundation - Implementation Spec
 
 ## Overview
@@ -882,7 +14,10 @@ This document provides implementation instructions for the **Game Phase State Ma
 -- Game Phase State Machine Tables
 -- Run this migration to add pending action and meta event tracking
 
--- Enum type for game phases
+-- Ensure pgcrypto extension is available for gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Enum types for game phases and meta event fields
 CREATE TYPE "game_phase" AS ENUM (
   'idle',
   'validating', 
@@ -894,7 +29,26 @@ CREATE TYPE "game_phase" AS ENUM (
   'resolving_action'
 );
 
+CREATE TYPE "meta_event_type" AS ENUM (
+  'encounter',
+  'discovery',
+  'hazard',
+  'opportunity'
+);
+
+CREATE TYPE "severity_level" AS ENUM (
+  'minor',
+  'moderate',
+  'major'
+);
+
+CREATE TYPE "player_decision" AS ENUM (
+  'accepted',
+  'rejected'
+);
+
 -- Pending Actions: tracks the player's intended action through its lifecycle
+-- NOTE: Removed currentEventIndex - use getNextUnresolvedEvent() instead to avoid drift
 CREATE TABLE "PendingAction" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "gameId" uuid NOT NULL REFERENCES "GameSession"("id") ON DELETE CASCADE,
@@ -902,7 +56,6 @@ CREATE TABLE "PendingAction" (
   "originalInput" text NOT NULL,
   "timeEstimate" varchar(50),
   "phase" game_phase NOT NULL DEFAULT 'validating',
-  "currentEventIndex" integer NOT NULL DEFAULT 0,
   "createdAt" timestamp NOT NULL DEFAULT NOW(),
   "updatedAt" timestamp NOT NULL DEFAULT NOW(),
   "completedAt" timestamp
@@ -913,15 +66,15 @@ CREATE TABLE "MetaEvent" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "pendingActionId" uuid NOT NULL REFERENCES "PendingAction"("id") ON DELETE CASCADE,
   "sequenceNum" integer NOT NULL DEFAULT 0,
-  "type" varchar(50) NOT NULL,
+  "type" meta_event_type NOT NULL,
   "title" varchar(255) NOT NULL,
   "description" text NOT NULL,
-  "probability" real NOT NULL,
-  "severity" varchar(20) NOT NULL,
+  "probability" real NOT NULL CHECK ("probability" >= 0 AND "probability" <= 1),
+  "severity" severity_level NOT NULL,
   "triggersCombat" boolean NOT NULL DEFAULT false,
   "timeImpact" varchar(50),
-  "playerDecision" varchar(20),
-  "rollResult" real,
+  "playerDecision" player_decision,
+  "rollResult" real CHECK ("rollResult" IS NULL OR ("rollResult" >= 0 AND "rollResult" <= 1)),
   "triggered" boolean,
   "resolvedAt" timestamp,
   "createdAt" timestamp NOT NULL DEFAULT NOW()
@@ -937,6 +90,10 @@ CREATE INDEX "MetaEvent_pendingActionId_idx" ON "MetaEvent"("pendingActionId");
 CREATE UNIQUE INDEX "PendingAction_active_per_game" 
   ON "PendingAction"("gameId") 
   WHERE "completedAt" IS NULL;
+
+-- Unique constraint: prevent duplicate sequence numbers per pending action
+CREATE UNIQUE INDEX "MetaEvent_sequence_unique"
+  ON "MetaEvent" ("pendingActionId", "sequenceNum");
 ```
 
 ---
@@ -960,6 +117,7 @@ import {
   pgEnum,
   uniqueIndex,
   index,
+  check,
 } from "drizzle-orm/pg-core";
 import type { InferSelectModel } from "drizzle-orm";
 
@@ -980,6 +138,24 @@ export const gamePhaseEnum = pgEnum("game_phase", [
   "resolving_action",
 ]);
 
+export const metaEventTypeEnum = pgEnum("meta_event_type", [
+  "encounter",
+  "discovery",
+  "hazard",
+  "opportunity",
+]);
+
+export const severityLevelEnum = pgEnum("severity_level", [
+  "minor",
+  "moderate",
+  "major",
+]);
+
+export const playerDecisionEnum = pgEnum("player_decision", [
+  "accepted",
+  "rejected",
+]);
+
 export const pendingAction = pgTable(
   "PendingAction",
   {
@@ -993,7 +169,6 @@ export const pendingAction = pgTable(
     originalInput: text("originalInput").notNull(),
     timeEstimate: varchar("timeEstimate", { length: 50 }),
     phase: gamePhaseEnum("phase").notNull().default("validating"),
-    currentEventIndex: integer("currentEventIndex").notNull().default(0),
     createdAt: timestamp("createdAt").notNull().defaultNow(),
     updatedAt: timestamp("updatedAt").notNull().defaultNow(),
     completedAt: timestamp("completedAt"),
@@ -1015,14 +190,14 @@ export const metaEvent = pgTable(
       .notNull()
       .references(() => pendingAction.id, { onDelete: "cascade" }),
     sequenceNum: integer("sequenceNum").notNull().default(0),
-    type: varchar("type", { length: 50 }).notNull(),
+    type: metaEventTypeEnum("type").notNull(),
     title: varchar("title", { length: 255 }).notNull(),
     description: text("description").notNull(),
     probability: real("probability").notNull(),
-    severity: varchar("severity", { length: 20 }).notNull(),
+    severity: severityLevelEnum("severity").notNull(),
     triggersCombat: boolean("triggersCombat").notNull().default(false),
     timeImpact: varchar("timeImpact", { length: 50 }),
-    playerDecision: varchar("playerDecision", { length: 20 }),
+    playerDecision: playerDecisionEnum("playerDecision"),
     rollResult: real("rollResult"),
     triggered: boolean("triggered"),
     resolvedAt: timestamp("resolvedAt"),
@@ -1030,6 +205,8 @@ export const metaEvent = pgTable(
   },
   (table) => [
     index("MetaEvent_pendingActionId_idx").on(table.pendingActionId),
+    // Note: CHECK constraints for probability and rollResult ranges are defined in migration
+    // Drizzle doesn't support CHECK constraints directly in schema definitions
   ]
 );
 
@@ -1116,7 +293,6 @@ export interface GameStateContext {
   chatId: string;
   currentPhase: GamePhase;
   pendingActionId: string | null;
-  currentEventIndex: number;
   isInMetaEvent: boolean;
   isInCombat: boolean;
 }
@@ -1171,6 +347,7 @@ export function getNextPhase(
     hasTriggeredEvents?: boolean;
     allEventsResolved?: boolean;
     combatEnded?: boolean;
+    reviewOutcome?: "confirm" | "regenerate";  // For meta_review phase
   }
 ): GamePhase {
   switch (currentPhase) {
@@ -1184,6 +361,10 @@ export function getNextPhase(
       return "meta_review";
       
     case "meta_review":
+      // Handle regenerate vs confirm
+      if (context.reviewOutcome === "regenerate") {
+        return "meta_proposal";
+      }
       // After player confirms, roll for probability
       return "probability_roll";
       
@@ -1194,7 +375,7 @@ export function getNextPhase(
       
     case "in_meta_event":
       // If all events resolved, resolve the original action
-      // Otherwise stay in event resolution (handled by incrementing currentEventIndex)
+      // Otherwise stay in event resolution (use getNextUnresolvedEvent() to find next)
       return context.allEventsResolved ? "resolving_action" : "in_meta_event";
       
     case "in_combat":
@@ -1222,7 +403,6 @@ export function createInitialContext(gameId: string, chatId: string): GameStateC
     chatId,
     currentPhase: "idle",
     pendingActionId: null,
-    currentEventIndex: 0,
     isInMetaEvent: false,
     isInCombat: false,
   };
@@ -1247,8 +427,6 @@ export function transitionPhase(
     currentPhase: newPhase,
     isInMetaEvent: newPhase === "in_meta_event",
     isInCombat: newPhase === "in_combat",
-    // Reset event index when entering a new action cycle
-    currentEventIndex: newPhase === "idle" ? 0 : context.currentEventIndex,
   };
 }
 ```
@@ -1349,24 +527,6 @@ export async function updatePendingActionPhase(
 }
 
 /**
- * Update the current event index for a pending action
- */
-export async function updatePendingActionEventIndex(
-  id: string,
-  currentEventIndex: number
-) {
-  const [result] = await db
-    .update(pendingAction)
-    .set({ 
-      currentEventIndex, 
-      updatedAt: new Date() 
-    })
-    .where(eq(pendingAction.id, id))
-    .returning();
-  return result;
-}
-
-/**
  * Mark a pending action as completed
  */
 export async function completePendingAction(id: string) {
@@ -1424,14 +584,24 @@ export async function getTriggeredUnresolvedEvents(pendingActionId: string) {
 }
 
 /**
- * Get the current event being resolved (based on currentEventIndex)
+ * Get the next unresolved event for a pending action
+ * Returns the first triggered but unresolved event by sequence number
+ * This avoids drift issues from using an index counter
  */
-export async function getCurrentMetaEvent(
-  pendingActionId: string,
-  currentEventIndex: number
-) {
-  const events = await getTriggeredUnresolvedEvents(pendingActionId);
-  return events[currentEventIndex] ?? null;
+export async function getNextUnresolvedEvent(pendingActionId: string) {
+  const [result] = await db
+    .select()
+    .from(metaEvent)
+    .where(
+      and(
+        eq(metaEvent.pendingActionId, pendingActionId),
+        eq(metaEvent.triggered, true),
+        isNull(metaEvent.resolvedAt)
+      )
+    )
+    .orderBy(asc(metaEvent.sequenceNum))
+    .limit(1);
+  return result ?? null;
 }
 
 /**
@@ -1585,12 +755,14 @@ export async function POST(request: Request) {
 
     // If in_meta_event, we process but with different context
     // (The narrator knows we're resolving an event, not starting fresh)
-    if (currentPhase === "in_meta_event" && activePendingAction) {
-      // Add to request context - will be used by narrator
-      // This is a placeholder for the actual implementation
-      request.headers.set("x-in-meta-event", "true");
-      request.headers.set("x-pending-action-id", activePendingAction.id);
-    }
+    // NOTE: Cannot mutate request.headers in Next.js - use a context object instead
+    const routeContext = {
+      inMetaEvent: currentPhase === "in_meta_event",
+      pendingActionId: activePendingAction?.id ?? null,
+    };
+    
+    // Pass routeContext into your narrator/module handler functions
+    // This will be used to build the Narrator Context appropriately
   }
 
   // ... rest of existing chat route code ...
@@ -1734,6 +906,7 @@ import { auth } from "@/app/(auth)/auth";
 import { 
   getActivePendingAction, 
   getCurrentGamePhase,
+  getGameById,
 } from "@/lib/db/queries";
 
 export async function GET(
@@ -1747,6 +920,18 @@ export async function GET(
 
   const { gameId } = params;
   
+  // CRITICAL: Verify user has access to this game
+  const game = await getGameById(gameId);
+  if (!game) {
+    return Response.json({ error: "Game not found" }, { status: 404 });
+  }
+  
+  // Check if user owns or has access to this game
+  // Adjust this check based on your game ownership/access model
+  if (game.userId !== session.user.id) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  
   const phase = await getCurrentGamePhase(gameId);
   const pendingAction = await getActivePendingAction(gameId);
 
@@ -1754,14 +939,65 @@ export async function GET(
     phase,
     pendingActionId: pendingAction?.id ?? null,
     originalInput: pendingAction?.originalInput ?? null,
-    currentEventIndex: pendingAction?.currentEventIndex ?? 0,
   });
 }
 ```
 
 ---
 
-## 10. File Structure Summary
+## 10. Important Notes and Recommendations
+
+### Critical Fixes Applied
+
+1. **Removed `currentEventIndex` from `PendingAction` table**
+   - **Problem**: Using an index counter with a filtered list (unresolved events) causes drift - when events resolve, the array shrinks but the index doesn't adjust, leading to skipped/repeated events.
+   - **Solution**: Use `getNextUnresolvedEvent()` query instead, which always returns the first unresolved event by sequence number. This is derived from the data, not tracked separately.
+
+2. **Fixed request headers mutation in chat route**
+   - **Problem**: `request.headers.set()` doesn't work in Next.js route handlers - headers are immutable.
+   - **Solution**: Create a `routeContext` object and pass it into downstream handler functions.
+
+3. **Added authorization check to phase endpoint**
+   - **Problem**: Only checked if user was logged in, not if they had access to the specific game.
+   - **Solution**: Verify game exists and user has access before returning phase data.
+
+### Strongly Recommended (Applied)
+
+4. **Added database constraints and enums**
+   - Added `CHECK` constraints for `probability` (0-1) and `rollResult` (0-1 or NULL)
+   - Created enums for `meta_event_type`, `severity_level`, and `player_decision` to enforce valid values at the database level
+   - Added unique constraint on `(pendingActionId, sequenceNum)` to prevent duplicate sequences
+
+5. **Added pgcrypto extension check**
+   - Migration now includes `CREATE EXTENSION IF NOT EXISTS pgcrypto;` to ensure `gen_random_uuid()` works
+
+### Future Considerations
+
+6. **Regeneration audit history**
+   - Current implementation deletes events on regeneration (`deleteMetaEventsByPendingAction()`)
+   - **Future improvement**: Consider adding a `generation` column instead of deleting, to preserve audit trail:
+     - Add `generation integer not null default 0` to `MetaEvent`
+     - When regenerating, increment generation and insert new rows
+     - Queries filter by max generation for active events
+     - This preserves debuggability and history
+
+7. **`getNextPhase()` regenerate handling**
+   - Updated to accept `reviewOutcome?: "confirm" | "regenerate"` parameter
+   - Properly handles the regenerate flow: `meta_review -> meta_proposal`
+
+8. **Polling during `meta_review` phase**
+   - Current implementation only polls during blocking phases
+   - Consider polling during `meta_review` as well if multiple tabs need to stay in sync
+   - Or migrate to SSE/WebSocket for real-time updates
+
+9. **`idle` phase consideration**
+   - Currently "idle" means both "no active pending action" and "completed pending action with phase idle"
+   - Some teams prefer removing `idle` from the enum and treating "no active pending action" as the only representation
+   - Current approach is fine, but worth noting for future refactoring
+
+---
+
+## 11. File Structure Summary
 
 ```
 lib/
@@ -1791,7 +1027,7 @@ hooks/
 
 ---
 
-## 11. Implementation Checklist
+## 12. Implementation Checklist
 
 1. [ ] Create migration file and run migration
 2. [ ] Add table definitions to `schema.ts`
@@ -1806,83 +1042,39 @@ hooks/
 
 ---
 
-## 12. Testing Checklist
+## 13. Testing Checklist
 
 After implementation, verify:
 
-- [ ] Migration runs without errors
+- [ ] Migration runs without errors (including pgcrypto extension)
 - [ ] Can create a pending action via query function
 - [ ] Can update pending action phase
 - [ ] Unique constraint prevents multiple active pending actions
+- [ ] Unique constraint prevents duplicate sequence numbers per pending action
 - [ ] `getCurrentGamePhase` returns "idle" when no active action
 - [ ] `isValidTransition` correctly validates transitions
+- [ ] `getNextUnresolvedEvent` returns first unresolved event correctly
+- [ ] `getNextUnresolvedEvent` returns null when all events resolved
 - [ ] Phase API endpoint returns correct data
+- [ ] Phase API endpoint requires proper authorization (403/404 for unauthorized access)
 - [ ] Chat route blocks input during blocking phases
+- [ ] Chat route creates routeContext object (doesn't mutate headers)
 - [ ] Game store phase state updates correctly
+- [ ] Database constraints reject invalid probability/rollResult values
+- [ ] Database enums reject invalid type/severity/decision values
 
 ---
 
 This is the foundational layer. Once implemented, the validator, meta event proposal, review UI, and probability modules will all build on these types and functions.
 
 ```sql
--- Game Phase State Machine Tables
--- Run this migration to add pending action and meta event tracking
-
--- Enum type for game phases
-CREATE TYPE "game_phase" AS ENUM (
-  'idle',
-  'validating', 
-  'meta_proposal',
-  'meta_review',
-  'probability_roll',
-  'in_meta_event',
-  'in_combat',
-  'resolving_action'
-);
-
--- Pending Actions: tracks the player's intended action through its lifecycle
-CREATE TABLE "PendingAction" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "gameId" uuid NOT NULL REFERENCES "GameSession"("id") ON DELETE CASCADE,
-  "chatId" uuid NOT NULL REFERENCES "Chat"("id") ON DELETE CASCADE,
-  "originalInput" text NOT NULL,
-  "timeEstimate" varchar(50),
-  "phase" game_phase NOT NULL DEFAULT 'validating',
-  "currentEventIndex" integer NOT NULL DEFAULT 0,
-  "createdAt" timestamp NOT NULL DEFAULT NOW(),
-  "updatedAt" timestamp NOT NULL DEFAULT NOW(),
-  "completedAt" timestamp
-);
-
--- MetaEvent: individual events proposed/triggered for a pending action
-CREATE TABLE "MetaEvent" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "pendingActionId" uuid NOT NULL REFERENCES "PendingAction"("id") ON DELETE CASCADE,
-  "sequenceNum" integer NOT NULL DEFAULT 0,
-  "type" varchar(50) NOT NULL,
-  "title" varchar(255) NOT NULL,
-  "description" text NOT NULL,
-  "probability" real NOT NULL,
-  "severity" varchar(20) NOT NULL,
-  "triggersCombat" boolean NOT NULL DEFAULT false,
-  "timeImpact" varchar(50),
-  "playerDecision" varchar(20),
-  "rollResult" real,
-  "triggered" boolean,
-  "resolvedAt" timestamp,
-  "createdAt" timestamp NOT NULL DEFAULT NOW()
-);
-
--- Indexes for performance
-CREATE INDEX "PendingAction_gameId_idx" ON "PendingAction"("gameId");
-CREATE INDEX "PendingAction_chatId_idx" ON "PendingAction"("chatId");
-CREATE INDEX "PendingAction_phase_idx" ON "PendingAction"("phase");
-CREATE INDEX "MetaEvent_pendingActionId_idx" ON "MetaEvent"("pendingActionId");
-
--- Unique constraint: only one active (non-completed) pending action per game
-CREATE UNIQUE INDEX "PendingAction_active_per_game" 
-  ON "PendingAction"("gameId") 
-  WHERE "completedAt" IS NULL;
+-- NOTE: This is a reference copy. See Section 1 for the full migration with all fixes applied.
+-- Key changes from original:
+-- - Added pgcrypto extension
+-- - Added enums for meta_event_type, severity_level, player_decision
+-- - Removed currentEventIndex from PendingAction
+-- - Added CHECK constraints for probability and rollResult
+-- - Added unique constraint on (pendingActionId, sequenceNum)
 ```
 
 ```typescript
@@ -2048,7 +1240,6 @@ export interface GameStateContext {
   chatId: string;
   currentPhase: GamePhase;
   pendingActionId: string | null;
-  currentEventIndex: number;
   isInMetaEvent: boolean;
   isInCombat: boolean;
 }
@@ -2097,6 +1288,7 @@ export function getNextPhase(
     hasTriggeredEvents?: boolean;
     allEventsResolved?: boolean;
     combatEnded?: boolean;
+    reviewOutcome?: "confirm" | "regenerate";  // For meta_review phase
   }
 ): GamePhase {
   switch (currentPhase) {
@@ -2110,6 +1302,10 @@ export function getNextPhase(
       return "meta_review";
       
     case "meta_review":
+      // Handle regenerate vs confirm
+      if (context.reviewOutcome === "regenerate") {
+        return "meta_proposal";
+      }
       // After player confirms, roll for probability
       return "probability_roll";
       
@@ -2120,7 +1316,7 @@ export function getNextPhase(
       
     case "in_meta_event":
       // If all events resolved, resolve the original action
-      // Otherwise stay in event resolution (handled by incrementing currentEventIndex)
+      // Otherwise stay in event resolution (use getNextUnresolvedEvent() to find next)
       return context.allEventsResolved ? "resolving_action" : "in_meta_event";
       
     case "in_combat":
@@ -2148,7 +1344,6 @@ export function createInitialContext(gameId: string, chatId: string): GameStateC
     chatId,
     currentPhase: "idle",
     pendingActionId: null,
-    currentEventIndex: 0,
     isInMetaEvent: false,
     isInCombat: false,
   };
@@ -2173,8 +1368,6 @@ export function transitionPhase(
     currentPhase: newPhase,
     isInMetaEvent: newPhase === "in_meta_event",
     isInCombat: newPhase === "in_combat",
-    // Reset event index when entering a new action cycle
-    currentEventIndex: newPhase === "idle" ? 0 : context.currentEventIndex,
   };
 }
 ```
@@ -2267,24 +1460,6 @@ export async function updatePendingActionPhase(
 }
 
 /**
- * Update the current event index for a pending action
- */
-export async function updatePendingActionEventIndex(
-  id: string,
-  currentEventIndex: number
-) {
-  const [result] = await db
-    .update(pendingAction)
-    .set({ 
-      currentEventIndex, 
-      updatedAt: new Date() 
-    })
-    .where(eq(pendingAction.id, id))
-    .returning();
-  return result;
-}
-
-/**
  * Mark a pending action as completed
  */
 export async function completePendingAction(id: string) {
@@ -2342,14 +1517,24 @@ export async function getTriggeredUnresolvedEvents(pendingActionId: string) {
 }
 
 /**
- * Get the current event being resolved (based on currentEventIndex)
+ * Get the next unresolved event for a pending action
+ * Returns the first triggered but unresolved event by sequence number
+ * This avoids drift issues from using an index counter
  */
-export async function getCurrentMetaEvent(
-  pendingActionId: string,
-  currentEventIndex: number
-) {
-  const events = await getTriggeredUnresolvedEvents(pendingActionId);
-  return events[currentEventIndex] ?? null;
+export async function getNextUnresolvedEvent(pendingActionId: string) {
+  const [result] = await db
+    .select()
+    .from(metaEvent)
+    .where(
+      and(
+        eq(metaEvent.pendingActionId, pendingActionId),
+        eq(metaEvent.triggered, true),
+        isNull(metaEvent.resolvedAt)
+      )
+    )
+    .orderBy(asc(metaEvent.sequenceNum))
+    .limit(1);
+  return result ?? null;
 }
 
 /**
@@ -2495,12 +1680,14 @@ export async function POST(request: Request) {
 
     // If in_meta_event, we process but with different context
     // (The narrator knows we're resolving an event, not starting fresh)
-    if (currentPhase === "in_meta_event" && activePendingAction) {
-      // Add to request context - will be used by narrator
-      // This is a placeholder for the actual implementation
-      request.headers.set("x-in-meta-event", "true");
-      request.headers.set("x-pending-action-id", activePendingAction.id);
-    }
+    // NOTE: Cannot mutate request.headers in Next.js - use a context object instead
+    const routeContext = {
+      inMetaEvent: currentPhase === "in_meta_event",
+      pendingActionId: activePendingAction?.id ?? null,
+    };
+    
+    // Pass routeContext into your narrator/module handler functions
+    // This will be used to build the Narrator Context appropriately
   }
 
   // ... rest of existing chat route code ...
@@ -2624,6 +1811,7 @@ import { auth } from "@/app/(auth)/auth";
 import { 
   getActivePendingAction, 
   getCurrentGamePhase,
+  getGameById,
 } from "@/lib/db/queries";
 
 export async function GET(
@@ -2637,6 +1825,18 @@ export async function GET(
 
   const { gameId } = params;
   
+  // CRITICAL: Verify user has access to this game
+  const game = await getGameById(gameId);
+  if (!game) {
+    return Response.json({ error: "Game not found" }, { status: 404 });
+  }
+  
+  // Check if user owns or has access to this game
+  // Adjust this check based on your game ownership/access model
+  if (game.userId !== session.user.id) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  
   const phase = await getCurrentGamePhase(gameId);
   const pendingAction = await getActivePendingAction(gameId);
 
@@ -2644,7 +1844,6 @@ export async function GET(
     phase,
     pendingActionId: pendingAction?.id ?? null,
     originalInput: pendingAction?.originalInput ?? null,
-    currentEventIndex: pendingAction?.currentEventIndex ?? 0,
   });
 }
 ```
