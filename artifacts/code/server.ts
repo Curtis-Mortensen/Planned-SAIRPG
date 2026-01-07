@@ -3,12 +3,11 @@ import { z } from "zod";
 import { codePrompt, updateDocumentPrompt } from "@/lib/ai/prompts";
 import { getArtifactModel } from "@/lib/ai/providers";
 import { createDocumentHandler } from "@/lib/artifacts/server";
+import { processObjectStream } from "@/lib/artifacts/streaming-utils";
 
 export const codeDocumentHandler = createDocumentHandler<"code">({
   kind: "code",
   onCreateDocument: async ({ title, dataStream }) => {
-    let draftContent = "";
-
     const { fullStream } = streamObject({
       model: getArtifactModel(),
       system: codePrompt,
@@ -18,30 +17,14 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
       }),
     });
 
-    for await (const delta of fullStream) {
-      const { type } = delta;
-
-      if (type === "object") {
-        const { object } = delta;
-        const { code } = object;
-
-        if (code) {
-          dataStream.write({
-            type: "data-codeDelta",
-            data: code ?? "",
-            transient: true,
-          });
-
-          draftContent = code;
-        }
-      }
-    }
-
-    return draftContent;
+    return processObjectStream(
+      fullStream,
+      "code",
+      "data-codeDelta",
+      dataStream
+    );
   },
   onUpdateDocument: async ({ document, description, dataStream }) => {
-    let draftContent = "";
-
     const { fullStream } = streamObject({
       model: getArtifactModel(),
       system: updateDocumentPrompt(document.content, "code"),
@@ -51,25 +34,11 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
       }),
     });
 
-    for await (const delta of fullStream) {
-      const { type } = delta;
-
-      if (type === "object") {
-        const { object } = delta;
-        const { code } = object;
-
-        if (code) {
-          dataStream.write({
-            type: "data-codeDelta",
-            data: code ?? "",
-            transient: true,
-          });
-
-          draftContent = code;
-        }
-      }
-    }
-
-    return draftContent;
+    return processObjectStream(
+      fullStream,
+      "code",
+      "data-codeDelta",
+      dataStream
+    );
   },
 });

@@ -1,26 +1,23 @@
-import { auth } from "@/app/(auth)/auth";
 import { getSuggestionsByDocumentId } from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
+import {
+  authenticateUser,
+  authorizeResourceAccess,
+  validateRequiredParams,
+} from "@/lib/api/auth-helpers";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const documentId = searchParams.get("documentId");
 
-  if (!documentId) {
-    return new ChatSDKError(
-      "bad_request:api",
-      "Parameter documentId is required."
-    ).toResponse();
-  }
+  const validation = validateRequiredParams({ documentId }, ["documentId"]);
+  if (!validation.valid) return validation.error;
 
-  const session = await auth();
-
-  if (!session?.user) {
-    return new ChatSDKError("unauthorized:suggestions").toResponse();
-  }
+  const { session, error: authError } = await authenticateUser();
+  if (authError) return authError;
 
   const suggestions = await getSuggestionsByDocumentId({
-    documentId,
+    documentId: documentId as string,
   });
 
   const [suggestion] = suggestions;
@@ -29,9 +26,12 @@ export async function GET(request: Request) {
     return Response.json([], { status: 200 });
   }
 
-  if (suggestion.userId !== session.user.id) {
-    return new ChatSDKError("forbidden:api").toResponse();
-  }
+  const { authorized, error: authzError } = authorizeResourceAccess(
+    suggestion.userId,
+    session.user.id,
+    "api"
+  );
+  if (!authorized) return authzError;
 
   return Response.json(suggestions, { status: 200 });
 }

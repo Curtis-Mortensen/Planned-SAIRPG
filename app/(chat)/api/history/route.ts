@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
-import { auth } from "@/app/(auth)/auth";
 import { deleteAllChatsByUserId, getChatsByUserId } from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
+import { authenticateUser } from "@/lib/api/auth-helpers";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -17,11 +17,8 @@ export async function GET(request: NextRequest) {
     ).toResponse();
   }
 
-  const session = await auth();
-
-  if (!session?.user) {
-    return new ChatSDKError("unauthorized:chat").toResponse();
-  }
+  const { session, error: authError } = await authenticateUser();
+  if (authError) return authError;
 
   const chats = await getChatsByUserId({
     id: session.user.id,
@@ -34,11 +31,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE() {
-  const session = await auth();
-
-  if (!session?.user) {
-    return new ChatSDKError("unauthorized:chat").toResponse();
-  }
+  const { session, error: authError } = await authenticateUser();
+  if (authError) return authError;
 
   const result = await deleteAllChatsByUserId({ userId: session.user.id });
 
