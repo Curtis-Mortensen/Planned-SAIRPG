@@ -55,7 +55,7 @@ function FeaturesSectionSkeleton() {
 }
 
 // Features section - loads after hero
-async function FeaturesSection() {
+function FeaturesSection() {
   return (
     <section className="relative px-4 py-24">
       <div className="mx-auto w-full max-w-5xl space-y-12">
@@ -169,7 +169,7 @@ function ArchitectureSectionSkeleton() {
 }
 
 // Architecture section - loads after features
-async function ArchitectureSection() {
+function ArchitectureSection() {
   return (
     <section className="relative bg-muted/30 px-4 py-24">
       <div className="mx-auto w-full max-w-5xl space-y-12">
@@ -256,7 +256,7 @@ function CTASectionSkeleton() {
 }
 
 // CTA section - loads last
-async function CTASection() {
+function CTASection() {
   return (
     <section className="relative px-4 py-32">
       <div className="mx-auto w-full max-w-3xl space-y-8 text-center">
