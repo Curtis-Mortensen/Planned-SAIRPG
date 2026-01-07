@@ -11,6 +11,7 @@ import {
   deleteGame,
   getGameByChatId,
   getSavesByGame,
+  getSaveCountsByGameIds,
 } from "@/lib/db/queries";
 import type { GameSession } from "@/lib/db/schema";
 import { ChatSDKError } from "@/lib/errors";
@@ -33,23 +34,16 @@ export async function getGamesAction(): Promise<GameWithSaveCount[]> {
 
     const games = await getGames({ userId: session.user.id });
     
-    // Get save counts for each game
-    const gamesWithCounts = await Promise.all(
-      games.map(async (game) => {
-        try {
-          const saves = await getSavesByGame(game.id);
-          return {
-            ...game,
-            saveCount: saves.length,
-          };
-        } catch {
-          return {
-            ...game,
-            saveCount: 0,
-          };
-        }
-      })
-    );
+    // Get save counts for all games in a single query (more efficient than N+1)
+    const gameIds = games.map((g) => g.id);
+    const saveCountsMap = await getSaveCountsByGameIds(gameIds);
+    
+    // Map save counts to games
+    // Note: Games without saves won't be in the map, so default to 0
+    const gamesWithCounts = games.map((game) => ({
+      ...game,
+      saveCount: saveCountsMap.get(game.id) ?? 0,
+    }));
 
     return gamesWithCounts;
   } catch (error) {

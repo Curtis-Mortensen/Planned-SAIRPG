@@ -461,7 +461,9 @@ export async function POST(request: Request) {
           },
           cost: calculateCost({ 
             model: selectedChatModel, 
-            tokensIn: userText.length / 4, // Rough estimate if not available
+            // TODO: Use proper tokenizer for accurate cost calculation
+            // Current rough estimate (length/4) may underestimate actual token usage
+            tokensIn: userText.length / 4,
             tokensOut: 0
           }).toString()
         });
@@ -590,7 +592,9 @@ export async function POST(request: Request) {
                      cost: calculateCost({ 
                        model: selectedChatModel, 
                        tokensIn: 0, 
-                       tokensOut: assistantText.length / 4 // Rough estimate till we get usage
+                       // TODO: Use proper tokenizer for accurate cost calculation
+                       // Current rough estimate (length/4) may underestimate actual token usage
+                       tokensOut: assistantText.length / 4
                      }).toString()
                    });
                 }
