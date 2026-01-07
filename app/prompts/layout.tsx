@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { EnsureUser } from "@/components/ensure-user";
+import { AppShellSkeleton } from "@/components/loading-skeletons";
 
 export default function PromptsLayout({
   children,
@@ -8,7 +9,7 @@ export default function PromptsLayout({
   children: React.ReactNode;
 }) {
   return (
-    <Suspense fallback={<div className="flex h-dvh" />}>
+    <Suspense fallback={<AppShellSkeleton />}>
       <EnsureUser />
       <AppShell>{children}</AppShell>
     </Suspense>

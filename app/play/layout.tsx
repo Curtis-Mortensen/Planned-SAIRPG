@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { DataStreamProvider } from "@/components/data-stream-provider";
 import { EnsureUser } from "@/components/ensure-user";
+import { AppShellSkeleton } from "@/components/loading-skeletons";
 
 export default function PlayLayout({
   children,
@@ -16,7 +17,7 @@ export default function PlayLayout({
         strategy="beforeInteractive"
       />
       <DataStreamProvider>
-        <Suspense fallback={<div className="flex h-dvh" />}>
+        <Suspense fallback={<AppShellSkeleton />}>
           <EnsureUser />
           <AppShell>{children}</AppShell>
         </Suspense>
