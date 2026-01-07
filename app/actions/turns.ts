@@ -22,7 +22,10 @@ export async function getSessionStatsAction(chatId: string): Promise<{
 
     const messages = messagesResult.status === "fulfilled" ? messagesResult.value : [];
     const chat = chatResult.status === "fulfilled" ? chatResult.value : null;
-    const cost = costResult.status === "fulfilled" ? (costResult.value as number) : 0;
+    // Safely extract cost with type validation
+    const cost = costResult.status === "fulfilled" && typeof costResult.value === "number" 
+      ? costResult.value 
+      : 0;
 
     // Derive turn count from user messages
     const turnNumber = messages.filter((m) => m.role === "user").length;

@@ -39,6 +39,7 @@ export async function getGamesAction(): Promise<GameWithSaveCount[]> {
     const saveCountsMap = await getSaveCountsByGameIds(gameIds);
     
     // Map save counts to games
+    // Note: Games without saves won't be in the map, so default to 0
     const gamesWithCounts = games.map((game) => ({
       ...game,
       saveCount: saveCountsMap.get(game.id) ?? 0,

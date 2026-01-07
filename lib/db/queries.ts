@@ -1187,6 +1187,8 @@ export async function getSavesByGame(
 /**
  * Get save counts for multiple games in a single query
  * More efficient than calling getSavesByGame for each game
+ * 
+ * @param gameIds - Array of game IDs (max 100 to prevent performance issues)
  */
 export async function getSaveCountsByGameIds(
   gameIds: string[]
@@ -1194,6 +1196,14 @@ export async function getSaveCountsByGameIds(
   try {
     if (gameIds.length === 0) {
       return new Map();
+    }
+
+    // Limit to prevent performance issues with large arrays
+    if (gameIds.length > 100) {
+      throw new ChatSDKError(
+        "bad_request:database",
+        "Cannot fetch save counts for more than 100 games at once"
+      );
     }
 
     const results = await db
