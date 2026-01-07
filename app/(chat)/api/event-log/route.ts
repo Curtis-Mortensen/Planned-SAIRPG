@@ -1,5 +1,5 @@
 import { auth } from "@/app/(auth)/auth";
-import { getEventLogCount, getEventLogs } from "@/lib/db/queries";
+import { getEventLogCount, getEventLogs, getGameById } from "@/lib/db/queries";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -17,6 +17,14 @@ export async function GET(request: Request) {
     const moduleName = searchParams.get("moduleName") ?? undefined;
     const limit = parseInt(searchParams.get("limit") ?? "50", 10);
     const offset = parseInt(searchParams.get("offset") ?? "0", 10);
+
+    // Verify user owns the game before fetching events
+    if (gameId) {
+      const game = await getGameById(gameId);
+      if (!game || game.userId !== session.user.id) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
 
     const [events, totalCount] = await Promise.all([
       getEventLogs({
