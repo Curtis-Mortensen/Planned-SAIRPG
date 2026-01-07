@@ -579,7 +579,8 @@ export async function updateChatTitleById({
   try {
     return await db.update(chat).set({ title }).where(eq(chat.id, chatId));
   } catch (error) {
-    console.warn("Failed to update title for chat", chatId, error);
+    // Don't log chatId to avoid potential security issues
+    console.warn("Failed to update chat title:", error instanceof Error ? error.message : String(error));
     return;
   }
 }
@@ -1179,6 +1180,36 @@ export async function getSavesByGame(
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to get saves by game"
+    );
+  }
+}
+
+/**
+ * Get save counts for multiple games in a single query
+ * More efficient than calling getSavesByGame for each game
+ */
+export async function getSaveCountsByGameIds(
+  gameIds: string[]
+): Promise<Map<string, number>> {
+  try {
+    if (gameIds.length === 0) {
+      return new Map();
+    }
+
+    const results = await db
+      .select({
+        gameId: saveSlot.gameId,
+        count: count(),
+      })
+      .from(saveSlot)
+      .where(inArray(saveSlot.gameId, gameIds))
+      .groupBy(saveSlot.gameId);
+
+    return new Map(results.map((r) => [r.gameId, r.count]));
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get save counts"
     );
   }
 }

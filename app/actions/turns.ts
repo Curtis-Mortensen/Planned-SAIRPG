@@ -13,11 +13,16 @@ export async function getSessionStatsAction(chatId: string): Promise<{
   lastActivity: Date | null;
 }> {
   try {
-    const [messages, chat, cost] = await Promise.all([
+    // Use Promise.allSettled for better error handling - allows partial success
+    const [messagesResult, chatResult, costResult] = await Promise.allSettled([
       getMessagesByChatId({ id: chatId }),
       getChatById({ id: chatId }),
       getChatCost(chatId),
     ]);
+
+    const messages = messagesResult.status === "fulfilled" ? messagesResult.value : [];
+    const chat = chatResult.status === "fulfilled" ? chatResult.value : null;
+    const cost = costResult.status === "fulfilled" ? (costResult.value as number) : 0;
 
     // Derive turn count from user messages
     const turnNumber = messages.filter((m) => m.role === "user").length;
