@@ -125,16 +125,38 @@ export function EventLogTab() {
   const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [activeGameId, setActiveGameId] = useState<string | null>(null);
+  const [isLoadingGame, setIsLoadingGame] = useState(true);
   const [filters, setFilters] = useState({
     moduleName: "all",
     eventType: "all",
   });
 
-  // Fetch active game on mount
+  // Fetch active game on mount with proper error handling
   useEffect(() => {
-    getActiveGameAction().then((game) => {
-      setActiveGameId(game?.id ?? null);
-    });
+    let isMounted = true;
+    
+    const fetchActiveGame = async () => {
+      try {
+        const game = await getActiveGameAction();
+        if (isMounted) {
+          setActiveGameId(game?.id ?? null);
+          setIsLoadingGame(false);
+        }
+      } catch (err) {
+        console.error("Error fetching active game:", err);
+        if (isMounted) {
+          setActiveGameId(null);
+          setIsLoadingGame(false);
+          // Don't show error - just show "No active game" state
+        }
+      }
+    };
+    
+    fetchActiveGame();
+    
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const fetchEvents = useCallback(async () => {
@@ -246,7 +268,7 @@ export function EventLogTab() {
         </div>
       )}
 
-      {isLoading && events.length === 0 ? (
+      {(isLoadingGame || isLoading) && events.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>

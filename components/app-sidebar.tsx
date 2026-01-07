@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { User } from "next-auth";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { unstable_serialize } from "swr/infinite";
-import { Settings } from "lucide-react";
+import { Settings, Loader2 } from "lucide-react";
 import { PlusIcon, TrashIcon } from "@/components/icons";
 import {
   getChatHistoryPaginationKey,
@@ -38,17 +38,40 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { useGameStore } from "@/lib/stores/game-store";
 import { usePathname } from "next/navigation";
+import { createGameAction } from "@/app/actions/games";
 
 export function AppSidebar({ user }: { user: User | undefined }) {
   const { setOpenMobile } = useSidebar();
   const { mutate } = useSWRConfig();
   const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
+  const [isCreatingGame, setIsCreatingGame] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const currentChatId = useGameStore((s) => s.currentChatId);
   const setNewGameConfirmDialogOpen = useGameStore((s) => s.setNewGameConfirmDialogOpen);
   const setNavigateHomeConfirmDialogOpen = useGameStore((s) => s.setNavigateHomeConfirmDialogOpen);
   const isOnPlayPage = pathname.startsWith("/play");
+
+  const startNewGame = useCallback(async () => {
+    setIsCreatingGame(true);
+    try {
+      const result = await createGameAction({});
+      if (result.success && result.chatId) {
+        localStorage.removeItem("input");
+        document.cookie = "last-play-id=; path=/; max-age=0";
+        router.push(`/play/${result.chatId}`);
+      } else if (result.error === "Unauthorized") {
+        // User not authenticated, redirect to guest auth flow then back to play
+        router.push("/api/auth/guest?redirectUrl=/play?new=true");
+      } else {
+        toast.error(result.error || "Failed to create new game");
+        setIsCreatingGame(false);
+      }
+    } catch (error) {
+      // Network error - might not be authenticated, try guest flow
+      router.push("/api/auth/guest?redirectUrl=/play?new=true");
+    }
+  }, [router]);
 
   const handleDeleteAll = () => {
     const deletePromise = fetch("/api/history", {
@@ -121,17 +144,19 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                         if (currentChatId) {
                           setNewGameConfirmDialogOpen(true);
                         } else {
-                          // No active game, just start new one directly
-                          localStorage.removeItem("input");
-                          document.cookie = "last-play-id=; path=/; max-age=0";
-                          router.push("/play?new=true");
-                          router.refresh();
+                          // No active game, create new one directly via server action
+                          startNewGame();
                         }
                       }}
                       type="button"
                       variant="ghost"
+                      disabled={isCreatingGame}
                     >
-                      <PlusIcon />
+                      {isCreatingGame ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <PlusIcon />
+                      )}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent align="end" className="hidden md:block">

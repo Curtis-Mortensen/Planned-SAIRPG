@@ -55,3 +55,22 @@ export type Attachment = {
   url: string;
   contentType: string;
 };
+
+// Type for narrator prompt settings
+export interface NarratorPromptSettings {
+  verbosity?: number;
+  tone?: number;
+  challenge?: number;
+  temperature?: number;
+  max_tokens?: number;
+  openingScene?: string;
+  lore?: string;
+}
+
+// Helper to safely access prompt settings
+export function asNarratorSettings(settings: unknown): NarratorPromptSettings {
+  if (settings && typeof settings === "object") {
+    return settings as NarratorPromptSettings;
+  }
+  return {};
+}

@@ -2,15 +2,15 @@
 
 ## Overview
 
-This document specifies the dice rolling system that integrates with the **Game Phase State Machine** from `intercept_system_design.md`. The system allows players to:
+This document specifies the dice rolling system that integrates with the **Game Phase State Machine** from `intercept_system_design.md`. The system follows a "prompt and roll" model:
 
-1. Type "roll a d6" (or d4, d8, d10, d12, d20) in chat for **freeform rolls**
-2. Roll dice during the **`probability_roll` phase** to determine which meta events trigger
-3. See dice graphics appear in chat (intercepted, not sent to LLM)
-4. Enter the result of their physical dice roll at home
-5. Have that result used by the game system to determine outcomes
+1. **System Prompting**: During the **`probability_roll` phase**, the game explicitly prompts the player in the chat to perform specific dice rolls for each accepted meta event.
+2. **Explanation**: Each prompt includes a clear explanation of what the numbers mean (e.g., "Roll a D20; a result of 1-6 triggers this event").
+3. **Dice Roller Icon**: A dedicated icon in the UI (outside the chat) allows the player to open a **Dice Roller Tool** in the context window.
+4. **Physical or Digital**: Players can roll physical dice at home and enter the result, or use the interactive digital roller in the context window.
+5. **Outcome Resolution**: Once the result is entered (via the tool), the game system determines the outcome and transitions to the next phase.
 
-The player rolls **physical dice** at home and reports the result. The system does NOT auto-generate random numbers.
+The system supports both manual entry of physical rolls and digital generation, providing flexibility for different play styles.
 
 ---
 
@@ -428,16 +428,21 @@ When the game enters `probability_roll` phase, the following happens:
 │     │   - Link to pendingActionId and metaEventId                 │        │
 │     └─────────────────────────────────────────────────────────────┘        │
 │                                                                             │
-│  3. System displays all pending rolls in chat (sequentially)                │
+│  3. Game prompts player in CHAT (Narrator/System message)                   │
 │     ┌─────────────────────────────────────────────────────────────┐        │
-│     │  🎲 Roll for: Rustling in the Bushes                        │        │
-│     │  Roll D20 - Event triggers on 1-6 (30% chance)              │        │
-│     │  [Enter your result: 1-20]                                  │        │
+│     │  "I need you to roll for 'Rustling in the Bushes'.          │        │
+│     │   Please roll a D20.                                        │        │
+│     │                                                             │        │
+│     │   EXPLANATION: In this game, low numbers trigger events.    │        │
+│     │   If you roll 1-6 (30% chance), the event triggers.         │        │
+│     │   If you roll 7-20, you avoid it."                          │        │
 │     └─────────────────────────────────────────────────────────────┘        │
 │                                                                             │
-│  4. Player rolls physical dice and enters result for EACH event             │
+│  4. Player opens DICE ROLLER via the icon in the Context Window             │
 │                                                                             │
-│  5. After ALL rolls complete:                                               │
+│  5. Player rolls (physical or digital) and enters result in Tool UI         │
+│                                                                             │
+│  6. After ALL rolls complete:                                               │
 │     - Update each MetaEvent with rollResult and triggered status            │
 │     - Transition to IN_META_EVENT (if any triggered) or RESOLVING_ACTION    │
 │                                                                             │
@@ -530,87 +535,43 @@ export async function getNextPendingRoll(pendingActionId: string) {
 
 ---
 
-## 5. Dice Roll Command Detection
+## 5. Dice Roll Input Model
 
-The system must intercept messages that match "roll a d__" BEFORE they go to the LLM.
+The system moves away from chat-intercepted dice graphics and instead use a dedicated **Dice Roller Tool** in the context window.
 
-### File: `lib/dice/detect-dice-command.ts`
+### Part 1: Game Prompting
+When the game requires a roll (e.g., during the `probability_roll` phase), the Narrator or System will send a standard text message to the chat.
 
-```typescript
-import type { DiceType } from "./types";
-import { DICE_TYPES } from "./types";
+**Example Prompt:**
+> "The forest grows silent as you approach the clearing. I need you to roll for the 'Rustling in the Bushes' event.
+> 
+> **Please roll a D20.**
+> 
+> *Explanation: This event has a 30% chance of triggering. If you roll between 1 and 6, the event occurs. If you roll 7 or higher, you remain undetected.*"
 
-/**
- * Regex pattern to detect dice roll commands
- * Matches: "roll a d6", "roll d20", "roll a d4", etc.
- * Case insensitive
- */
-const DICE_ROLL_PATTERN = /^roll\s+(?:a\s+)?(d(?:4|6|8|10|12|20))$/i;
-
-/**
- * Checks if a message is a dice roll command
- * Returns the dice type if it is, null otherwise
- */
-export function detectDiceCommand(message: string): DiceType | null {
-  const trimmed = message.trim().toLowerCase();
-  const match = trimmed.match(DICE_ROLL_PATTERN);
-  
-  if (!match) {
-    return null;
-  }
-  
-  const diceType = match[1].toLowerCase() as DiceType;
-  
-  // Verify it's a valid dice type (defensive)
-  if (!DICE_TYPES.includes(diceType)) {
-    return null;
-  }
-  
-  return diceType;
-}
-```
+### Part 2: Dice Roller Icon
+A dice icon is located in the chat interface toolbar or sidebar. Clicking this icon opens the **Dice Roller** in the context window (Artifacts/Right Panel).
 
 ---
 
-## 6. Chat Intercept Integration
+## 6. UI Integration
 
 ### Update: `components/multimodal-input.tsx`
-
-In the `submitForm` function, add dice command detection:
+Add a dice icon button to the input toolbar that toggles the dice roller artifact.
 
 ```typescript
-import { detectDiceCommand } from "@/lib/dice/detect-dice-command";
-import { useGameStore } from "@/lib/stores/game-store";
+import { DiceIcon } from "@/components/dice/dice-icon";
+import { useUIStore } from "@/lib/stores/ui-store";
 
-// Inside the component:
-const { currentPhase } = useGameStore();
-
-// Inside submitForm callback, BEFORE calling sendMessage:
-const submitForm = useCallback(() => {
-  // Check if this is a dice roll command
-  const diceType = detectDiceCommand(input);
-  
-  if (diceType) {
-    // Only allow freeform rolls when NOT in probability_roll phase
-    // During probability_roll, the UI handles it differently
-    if (currentPhase === "probability_roll") {
-      // Don't intercept - the probability roll UI handles this
-      return;
-    }
-    
-    // Don't send to LLM - handle locally as freeform roll
-    handleFreeformDiceRoll(diceType, input);
-    
-    // Clear input and reset
-    setAttachments([]);
-    setLocalStorageInput("");
-    resetHeight();
-    setInput("");
-    return; // Exit early - don't call sendMessage
-  }
-  
-  // ... existing sendMessage logic ...
-}, [/* deps including currentPhase */]);
+// Inside the toolbar:
+<Button
+  variant="ghost"
+  size="icon"
+  onClick={() => setArtifactVisibility("dice-roller", true)}
+  title="Open Dice Roller"
+>
+  <DiceIcon type="d20" size={20} />
+</Button>
 ```
 
 ---
@@ -745,11 +706,11 @@ export function DiceIcon({ type, className, size = 48, value }: DiceIconProps) {
 
 ---
 
-## 8. Dice Roll Chat Message Component
+## 8. Dice Roller Artifact (Context Window)
 
-This component renders in the chat when a dice roll is requested.
+Instead of individual chat messages, the dice roller exists as a persistent tool in the context window.
 
-### File: `components/dice/dice-roll-message.tsx`
+### File: `components/artifacts/dice-roller.tsx`
 
 ```typescript
 "use client";
@@ -757,323 +718,163 @@ This component renders in the chat when a dice roll is requested.
 import { useState } from "react";
 import type { DiceType, DiceRollState, DiceRollPurpose } from "@/lib/dice/types";
 import { DICE_MAX_VALUES, getValidResults } from "@/lib/dice/types";
-import { DiceIcon } from "./dice-icon";
+import { DiceIcon } from "@/components/dice/dice-icon";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-interface DiceRollMessageProps {
-  rollId: string;
-  diceType: DiceType;
-  state: DiceRollState;
-  result: number | null;
-  purpose: DiceRollPurpose;
-  context?: string;
-  threshold?: number;  // For meta_event rolls - shows success threshold
-  onSubmitResult: (rollId: string, result: number) => Promise<void>;
-  onCancel?: (rollId: string) => Promise<void>;
-}
-
 /**
- * Renders a dice roll request in the chat
- * Shows dice graphic and result input when pending
- * Shows completed result when done
+ * The Dice Roller Artifact handles:
+ * 1. Visualizing the dice to be rolled
+ * 2. Manual entry of physical roll results
+ * 3. Digital rolling (optional helper)
+ * 4. Displaying the explanation of the current required roll
  */
-export function DiceRollMessage({
-  rollId,
-  diceType,
-  state,
-  result,
-  purpose,
-  context,
-  threshold,
-  onSubmitResult,
-  onCancel,
-}: DiceRollMessageProps) {
+export function DiceRollerArtifact({
+  roll,                      // Current active DiceRoll record
+  onResult,                  // Callback when result is confirmed
+}: {
+  roll?: DiceRoll;
+  onResult: (result: number) => Promise<void>;
+}) {
   const [selectedResult, setSelectedResult] = useState<number | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRolling, setIsRolling] = useState(false);
 
-  const validResults = getValidResults(diceType);
+  if (!roll) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-8 text-center text-muted-foreground">
+        <DiceIcon type="d20" size={64} className="mb-4 opacity-20" />
+        <p>No active roll requested.</p>
+        <p className="text-sm">The game will prompt you when a roll is needed.</p>
+      </div>
+    );
+  }
+
+  const diceType = roll.diceType as DiceType;
   const maxValue = DICE_MAX_VALUES[diceType];
-  const isMetaEvent = purpose === "meta_event";
+  const validResults = getValidResults(diceType);
 
-  const handleSubmit = async () => {
-    if (selectedResult === null) return;
-    
-    setIsSubmitting(true);
-    try {
-      await onSubmitResult(rollId, selectedResult);
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleDigitalRoll = () => {
+    setIsRolling(true);
+    // Simulate dice rolling animation
+    setTimeout(() => {
+      const result = Math.floor(Math.random() * maxValue) + 1;
+      setSelectedResult(result);
+      setIsRolling(false);
+    }, 600);
   };
 
-  // Completed state - show result with trigger indication for meta events
-  if (state === "completed" && result !== null) {
-    const triggered = isMetaEvent && threshold ? result <= threshold : null;
-    
-    return (
-      <div className={cn(
-        "flex items-center gap-3 rounded-lg border p-4",
-        triggered === true && "border-green-500 bg-green-500/10",
-        triggered === false && "border-muted bg-muted/30",
-        triggered === null && "border-border bg-muted/30"
-      )}>
-        <DiceIcon 
-          className={cn(
-            triggered === true && "text-green-500",
-            triggered === false && "text-muted-foreground",
-            triggered === null && "text-primary"
-          )}
-          size={56} 
-          type={diceType} 
-          value={result} 
-        />
-        <div className="flex flex-col">
-          <span className="text-muted-foreground text-sm">
-            Rolled {diceType.toUpperCase()}
-          </span>
-          <span className="font-bold text-2xl">{result}</span>
-          {context && (
-            <span className="text-muted-foreground text-xs">{context}</span>
-          )}
-          {isMetaEvent && threshold && (
-            <span className={cn(
-              "text-sm font-medium",
-              triggered ? "text-green-500" : "text-muted-foreground"
-            )}>
-              {triggered ? "✓ Event triggers!" : "✗ No trigger"}
-              {" "}(needed ≤{threshold})
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Cancelled state
-  if (state === "cancelled") {
-    return (
-      <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-4 opacity-50">
-        <DiceIcon className="text-muted-foreground" size={48} type={diceType} />
-        <div className="flex flex-col">
-          <span className="text-muted-foreground text-sm line-through">
-            Roll {diceType.toUpperCase()}
-          </span>
-          <span className="text-muted-foreground text-xs">Cancelled</span>
-        </div>
-      </div>
-    );
-  }
-
-  // Pending state - show input
   return (
-    <div className={cn(
-      "flex flex-col gap-4 rounded-lg border p-4 shadow-sm",
-      isMetaEvent ? "border-amber-500/50 bg-amber-500/5" : "border-primary/50 bg-background"
-    )}>
-      {/* Header with dice icon */}
-      <div className="flex items-center gap-3">
-        <DiceIcon 
-          className={cn("animate-pulse", isMetaEvent ? "text-amber-500" : "text-primary")}
-          size={56} 
-          type={diceType} 
-        />
-        <div className="flex flex-col">
-          <span className="font-medium">Roll your {diceType.toUpperCase()}</span>
-          {context ? (
-            <span className="text-muted-foreground text-sm">{context}</span>
-          ) : (
-            <span className="text-muted-foreground text-sm">
-              Roll at home and enter the result (1-{maxValue})
-            </span>
-          )}
-          {isMetaEvent && threshold && (
-            <span className="text-amber-600 text-xs font-medium">
-              Event triggers on roll of 1-{threshold}
-            </span>
-          )}
-        </div>
+    <div className="flex flex-col h-full bg-background p-6">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold flex items-center gap-2">
+          <DiceIcon type={diceType} size={32} />
+          Roll {diceType.toUpperCase()}
+        </h2>
+        {roll.context && (
+          <p className="text-muted-foreground mt-2">{roll.context}</p>
+        )}
       </div>
 
-      {/* Result selector - grid of buttons for each possible value */}
-      <div className="flex flex-col gap-2">
-        <span className="text-muted-foreground text-xs font-medium">
-          What did you roll?
-        </span>
-        <div className={cn(
-          "grid gap-2",
-          maxValue <= 6 ? "grid-cols-6" : 
-          maxValue <= 10 ? "grid-cols-5" : 
-          maxValue <= 12 ? "grid-cols-6" : 
-          "grid-cols-5"
-        )}>
-          {validResults.map((num) => {
-            const wouldTrigger = isMetaEvent && threshold ? num <= threshold : null;
-            return (
+      {/* Explanation for Meta Events */}
+      {roll.purpose === "meta_event" && roll.threshold && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 mb-6">
+          <p className="text-sm">
+            <strong>Threshold: {roll.threshold}</strong>
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            To trigger this event, you need to roll <strong>1 through {roll.threshold}</strong>.
+            A result of {roll.threshold + 1} or higher means the event is avoided.
+          </p>
+        </div>
+      )}
+
+      {/* Entry Method: Digital or Manual */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <Button 
+            variant="outline" 
+            className="h-24 flex flex-col gap-2"
+            onClick={handleDigitalRoll}
+            disabled={isRolling}
+          >
+            <span className="text-xl">🎲</span>
+            Roll Digital
+          </Button>
+          <div className="h-24 border rounded-lg flex flex-col items-center justify-center bg-muted/30">
+            <span className="text-xs text-muted-foreground font-medium uppercase">Result</span>
+            <span className="text-3xl font-mono font-bold">
+              {isRolling ? "..." : selectedResult ?? "--"}
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <label className="text-xs font-semibold text-muted-foreground uppercase">
+            Manual Entry (Physical Dice)
+          </label>
+          <div className="grid grid-cols-5 gap-2">
+            {validResults.map((num) => (
               <Button
-                className={cn(
-                  "h-10 w-full font-bold",
-                  selectedResult === num && "ring-2 ring-primary ring-offset-2",
-                  wouldTrigger === true && selectedResult !== num && "border-green-500/50",
-                  wouldTrigger === false && selectedResult !== num && "border-muted"
-                )}
-                disabled={isSubmitting}
                 key={num}
-                onClick={() => setSelectedResult(num)}
-                size="sm"
                 variant={selectedResult === num ? "default" : "outline"}
+                size="sm"
+                className="font-bold"
+                onClick={() => setSelectedResult(num)}
               >
                 {num}
               </Button>
-            );
-          })}
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Submit button */}
-      <div className="flex items-center gap-2">
-        <Button
-          className="flex-1"
-          disabled={selectedResult === null || isSubmitting}
-          onClick={handleSubmit}
+      <div className="p-4 border-t mt-auto">
+        <Button 
+          className="w-full h-12 text-lg" 
+          disabled={selectedResult === null || isRolling}
+          onClick={() => onResult(selectedResult!)}
         >
-          {isSubmitting ? "Submitting..." : "Confirm Result"}
+          Confirm Result
         </Button>
-        {onCancel && !isMetaEvent && (
-          <Button
-            disabled={isSubmitting}
-            onClick={() => onCancel(rollId)}
-            variant="ghost"
-          >
-            Cancel
-          </Button>
-        )}
       </div>
     </div>
   );
 }
 ```
+## 9. Probability Roll Phase UI Integration
 
----
+During the `probability_roll` phase, the main gameplay area provides a summary of progress, while the Dice Roller Artifact handles the input.
 
-## 9. Probability Roll Phase UI Component
-
-A component that shows during the `probability_roll` phase, displaying all pending rolls.
-
-### File: `components/play/probability-roll-phase.tsx`
+### File: `components/play/probability-roll-status.tsx`
 
 ```typescript
 "use client";
 
-import { useEffect, useState } from "react";
-import { DiceRollMessage } from "@/components/dice/dice-roll-message";
-import type { DiceRoll } from "@/lib/db/schema";
-
-interface ProbabilityRollPhaseProps {
-  pendingActionId: string;
-  onAllRollsComplete: () => void;
-}
+import { useUIStore } from "@/lib/stores/ui-store";
 
 /**
- * UI component for the probability_roll phase
- * Shows pending dice rolls for each accepted meta event
+ * Status indicator shown in the chat area during probability_roll phase
  */
-export function ProbabilityRollPhase({
-  pendingActionId,
-  onAllRollsComplete,
-}: ProbabilityRollPhaseProps) {
-  const [pendingRolls, setPendingRolls] = useState<DiceRoll[]>([]);
-  const [completedRolls, setCompletedRolls] = useState<DiceRoll[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Fetch pending rolls on mount
-  useEffect(() => {
-    async function fetchRolls() {
-      const response = await fetch(`/api/dice/pending/${pendingActionId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setPendingRolls(data.pending);
-        setCompletedRolls(data.completed);
-      }
-      setLoading(false);
-    }
-    fetchRolls();
-  }, [pendingActionId]);
-
-  const handleSubmitResult = async (rollId: string, result: number) => {
-    const response = await fetch(`/api/dice/roll/${rollId}/result`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ result }),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      
-      // Move from pending to completed
-      setPendingRolls(prev => prev.filter(r => r.id !== rollId));
-      setCompletedRolls(prev => [...prev, data.roll]);
-
-      // Check if all complete
-      if (data.allComplete) {
-        onAllRollsComplete();
-      }
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <span className="text-muted-foreground">Loading dice rolls...</span>
-      </div>
-    );
-  }
+export function ProbabilityRollStatus({ 
+  pendingCount, 
+  completedCount 
+}: { 
+  pendingCount: number;
+  completedCount: number;
+}) {
+  const { setArtifactVisibility } = useUIStore();
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <div className="text-center">
-        <h3 className="font-semibold text-lg">Roll for Events</h3>
-        <p className="text-muted-foreground text-sm">
-          Roll your dice at home and enter the results below
-        </p>
+    <div className="flex flex-col items-center gap-2 p-4 border rounded-xl bg-muted/20 my-4">
+      <div className="text-sm font-medium">
+        Dice Roll Required ({completedCount} / {completedCount + pendingCount} completed)
       </div>
-
-      {/* Completed rolls */}
-      {completedRolls.map((roll) => (
-        <DiceRollMessage
-          context={roll.context ?? undefined}
-          diceType={roll.diceType as DiceType}
-          key={roll.id}
-          onSubmitResult={handleSubmitResult}
-          purpose={roll.purpose as DiceRollPurpose}
-          result={roll.result}
-          rollId={roll.id}
-          state={roll.state as DiceRollState}
-          threshold={roll.threshold ?? undefined}
-        />
-      ))}
-
-      {/* Current pending roll (show one at a time) */}
-      {pendingRolls[0] && (
-        <DiceRollMessage
-          context={pendingRolls[0].context ?? undefined}
-          diceType={pendingRolls[0].diceType as DiceType}
-          key={pendingRolls[0].id}
-          onSubmitResult={handleSubmitResult}
-          purpose={pendingRolls[0].purpose as DiceRollPurpose}
-          result={pendingRolls[0].result}
-          rollId={pendingRolls[0].id}
-          state={pendingRolls[0].state as DiceRollState}
-          threshold={pendingRolls[0].threshold ?? undefined}
-        />
-      )}
-
-      {/* Progress indicator */}
-      {pendingRolls.length > 1 && (
-        <div className="text-center text-muted-foreground text-sm">
-          {completedRolls.length} of {completedRolls.length + pendingRolls.length} rolls complete
-        </div>
-      )}
+      <Button 
+        size="sm" 
+        onClick={() => setArtifactVisibility("dice-roller", true)}
+      >
+        Open Dice Roller
+      </Button>
     </div>
   );
 }
@@ -1083,141 +884,17 @@ export function ProbabilityRollPhase({
 
 ## 10. API Endpoints
 
-### File: `app/api/dice/roll/route.ts`
+The API remains consistent for managing the `DiceRoll` records.
 
-```typescript
-import { auth } from "@/app/(auth)/auth";
-import { createFreeformDiceRoll } from "@/lib/db/queries";
-import { DICE_TYPES } from "@/lib/dice/types";
+### POST `/api/dice/roll`
+Creates a new freeform dice roll request.
 
-/**
- * POST /api/dice/roll
- * Creates a new freeform dice roll request
- */
-export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { gameId, chatId, diceType, context } = await request.json();
-
-  if (!DICE_TYPES.includes(diceType)) {
-    return Response.json({ error: "Invalid dice type" }, { status: 400 });
-  }
-
-  const diceRoll = await createFreeformDiceRoll({
-    gameId,
-    chatId,
-    diceType,
-    context,
-  });
-
-  return Response.json(diceRoll);
-}
-```
-
-### File: `app/api/dice/roll/[rollId]/result/route.ts`
-
-```typescript
-import { auth } from "@/app/(auth)/auth";
-import { getDiceRollById, updateDiceRollResult } from "@/lib/db/queries";
-import { isValidResult, DICE_MAX_VALUES } from "@/lib/dice/types";
-import { processMetaEventRollResult } from "@/lib/dice/probability-roll-handler";
-
-/**
- * POST /api/dice/roll/[rollId]/result
- * Submits the player's dice roll result
- */
-export async function POST(
-  request: Request,
-  { params }: { params: { rollId: string } }
-) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { rollId } = params;
-  const { result } = await request.json();
-
-  const roll = await getDiceRollById(rollId);
-  if (!roll) {
-    return Response.json({ error: "Roll not found" }, { status: 404 });
-  }
-
-  if (roll.state !== "pending") {
-    return Response.json({ error: "Roll already completed" }, { status: 400 });
-  }
-
-  if (!isValidResult(roll.diceType as DiceType, result)) {
-    return Response.json({ 
-      error: `Invalid result. Must be 1-${DICE_MAX_VALUES[roll.diceType as DiceType]}` 
-    }, { status: 400 });
-  }
-
-  // Update the roll
-  const updated = await updateDiceRollResult(rollId, result);
-
-  // If this is a meta event roll, process it
-  if (roll.purpose === "meta_event") {
-    const { triggered, allComplete } = await processMetaEventRollResult({
-      diceRollId: rollId,
-      result,
-    });
-    
-    return Response.json({ 
-      roll: updated, 
-      triggered,
-      allComplete,
-    });
-  }
-
-  return Response.json({ roll: updated });
-}
-```
-
-### File: `app/api/dice/pending/[pendingActionId]/route.ts`
-
-```typescript
-import { auth } from "@/app/(auth)/auth";
-import { getPendingMetaEventRolls } from "@/lib/db/queries";
-import { diceRoll } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
-
-/**
- * GET /api/dice/pending/[pendingActionId]
- * Gets all dice rolls for a pending action (pending and completed)
- */
-export async function GET(
-  request: Request,
-  { params }: { params: { pendingActionId: string } }
-) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { pendingActionId } = params;
-  
-  const pending = await getPendingMetaEventRolls(pendingActionId);
-  
-  // Also get completed rolls for display
-  const completed = await db
-    .select()
-    .from(diceRoll)
-    .where(
-      and(
-        eq(diceRoll.pendingActionId, pendingActionId),
-        eq(diceRoll.purpose, "meta_event"),
-        eq(diceRoll.state, "completed")
-      )
-    )
-    .orderBy(asc(diceRoll.completedAt));
-
-  return Response.json({ pending, completed });
-}
-```
+### POST `/api/dice/roll/[rollId]/result`
+Submits the player's dice roll result.
+1. Updates the `DiceRoll` record state to `completed`.
+2. Creates an `EventLog` entry with `eventType: "dice_roll_result"`.
+   - **Payload**: `{ rollId, result, diceType, purpose, context, threshold, triggered }`
+3. For `meta_event` rolls, this invokes `processMetaEventRollResult` to update the state machine.
 
 ---
 
@@ -1226,31 +903,20 @@ export async function GET(
 ```
 lib/dice/
 ├── types.ts                        # DiceType, DiceRoll, validation, threshold conversion
-├── detect-dice-command.ts          # Regex detection for "roll a d__"
-├── create-dice-message.ts          # Helper to create local messages
 └── probability-roll-handler.ts     # Meta event roll orchestration
 
 components/dice/
 ├── dice-icon.tsx                   # SVG icons for each dice type
-├── dice-roll-message.tsx           # Chat message with result input
 └── quick-roll-buttons.tsx          # Toolbar buttons for quick rolls
 
+components/artifacts/
+└── dice-roller.tsx                 # Full-screen/Sidebar artifact for rolling
+
 components/play/
-└── probability-roll-phase.tsx      # UI for probability_roll phase
+└── probability-roll-status.tsx      # Inline status for the phase
 
 hooks/
 └── use-dice-roll.ts                # Hook for creating dice rolls
-
-app/api/dice/
-├── roll/
-│   └── route.ts                    # POST - create freeform dice roll
-├── roll/[rollId]/
-│   ├── result/
-│   │   └── route.ts                # POST - submit result
-│   └── cancel/
-│       └── route.ts                # POST - cancel roll
-└── pending/[pendingActionId]/
-    └── route.ts                    # GET - get pending rolls for action
 
 lib/db/
 ├── schema.ts                       # Add diceRoll table
@@ -1259,101 +925,54 @@ lib/db/
     └── 00XX_dice_rolls.sql         # Migration
 
 (updates)
-├── components/message.tsx          # Handle dice-roll part type
-├── components/multimodal-input.tsx # Intercept dice commands
-├── components/play/play-chat.tsx   # Show probability-roll-phase when in that phase
-└── lib/types.ts                    # Add DiceRollPart type
+├── components/multimodal-input.tsx # Add Dice Icon to open artifact
+└── components/play/play-chat.tsx   # Show status & ensure artifact is open during phase
 ```
 
 ---
 
-## 12. Integration with play-chat.tsx
-
-### Update: `components/play/play-chat.tsx`
-
-```typescript
-import { ProbabilityRollPhase } from "./probability-roll-phase";
-import { useGameStore } from "@/lib/stores/game-store";
-
-// Inside the component:
-const { currentPhase, pendingActionId } = useGameStore();
-
-// In the render, conditionally show the probability roll UI:
-{currentPhase === "probability_roll" && pendingActionId && (
-  <ProbabilityRollPhase
-    pendingActionId={pendingActionId}
-    onAllRollsComplete={() => {
-      // Trigger phase transition to next phase
-      // This will be handled by the state machine / Inngest workflow
-    }}
-  />
-)}
-```
-
----
-
-## 13. Implementation Checklist
+## 12. Implementation Checklist
 
 1. [ ] Create `lib/dice/types.ts` with threshold conversion
-2. [ ] Create `lib/dice/detect-dice-command.ts`
-3. [ ] Create `lib/dice/probability-roll-handler.ts`
-4. [ ] Create database migration for DiceRoll table (with FK to PendingAction/MetaEvent)
-5. [ ] Add diceRoll to `lib/db/schema.ts`
-6. [ ] Add dice roll queries to `lib/db/queries.ts`
-7. [ ] Create `components/dice/dice-icon.tsx`
-8. [ ] Create `components/dice/dice-roll-message.tsx` (with meta event support)
-9. [ ] Create `components/play/probability-roll-phase.tsx`
-10. [ ] Create API routes for dice rolls
-11. [ ] Create `lib/dice/create-dice-message.ts`
-12. [ ] Create `hooks/use-dice-roll.ts`
-13. [ ] Update `lib/types.ts` with DiceRollPart
-14. [ ] Update `components/message.tsx` to render dice rolls
-15. [ ] Update `components/multimodal-input.tsx` to intercept commands
-16. [ ] Update `components/play/play-chat.tsx` to show probability roll phase
+2. [ ] Create `lib/dice/probability-roll-handler.ts`
+3. [ ] Create database migration for DiceRoll table
+4. [ ] Add diceRoll to `lib/db/schema.ts`
+5. [ ] Add dice roll queries to `lib/db/queries.ts`
+6. [ ] Create `components/dice/dice-icon.tsx`
+7. [ ] Create `components/artifacts/dice-roller.tsx`
+8. [ ] Create `components/play/probability-roll-status.tsx`
+9. [ ] Create API routes for dice rolls
+10. [ ] Implement `EventLog` recording for completed dice rolls
+11. [ ] Update `components/multimodal-input.tsx` to include the Dice Roller icon
+12. [ ] Update `components/play/play-chat.tsx` to integrate the phase status
 
 ---
 
-## 14. Testing Checklist
+## 13. Testing Checklist
 
-After implementation, verify:
+**System Prompting:**
+- [ ] Transitioning to `probability_roll` phase sends a narrator message explaining the roll and the numbers.
 
-**Freeform Rolls:**
-- [ ] Typing "roll a d6" creates a dice roll message (no LLM call)
-- [ ] Typing "Roll a D20" works (case insensitive)
-- [ ] Typing "roll d4" works (optional "a")
-- [ ] Typing "roll a d7" does NOT match (invalid dice)
-- [ ] Completed rolls show the result in the dice icon
-
-**Meta Event Rolls (probability_roll phase):**
-- [ ] Entering `probability_roll` phase creates dice rolls for each accepted event
-- [ ] Dice rolls show threshold info ("Event triggers on roll of 1-6")
-- [ ] Submitting result correctly determines if event triggers
-- [ ] Completed rolls show trigger status with visual feedback
-- [ ] All rolls completing transitions to next phase
-
-**Integration:**
-- [ ] Database records link correctly between DiceRoll, PendingAction, and MetaEvent
-- [ ] Phase transitions work correctly after all rolls complete
-- [ ] Freeform rolls blocked during probability_roll phase (or handled differently)
+**Dice Roller Tool:**
+- [ ] Clicking the Dice Icon opens the artifact in the context window.
+- [ ] Digital "Roll" button generates a random number with animation.
+- [ ] Manual entry buttons allow selecting physical results.
+- [ ] "Confirm Result" updates the database and moves to the next roll or phase.
+- [ ] Confirming a roll creates a new entry in the Event Log with the correct details.
 
 ---
 
-## 15. Key Design Decisions
+## 14. Key Design Decisions
 
-### Why d20 for Meta Event Probability?
-- Familiar to D&D players
-- 5% increments (each number = 5% probability)
-- Easy mental math: probability × 20 = threshold
-- Example: 30% chance = roll 1-6 on d20
+### Manual vs Digital?
+We provide both. Physical dice maintain the tabletop feel, but digital rollers provide accessibility and convenience.
 
-### Why Show One Roll at a Time?
-- Prevents overwhelm when many events accepted
-- Creates suspense/drama for each event
-- Player focuses on one decision at a time
-- Progress indicator shows remaining rolls
+### Why Context Window?
+Keeping the roller in the context window prevents it from cluttering the chat history while allowing the player to refer back to the Narrator's explanation in the chat while rolling.
 
-### Why Physical Dice?
-- Maintains tabletop RPG feel
-- Player agency and trust in their own rolls
-- No concerns about "rigged" RNG
-- Works offline/without internet
+### Meta Event Explanation
+Every roll prompt must explain what "Success" and "Failure" mean for that specific roll, especially since "rolling low" (triggering an event) might be counter-intuitive to players used to "rolling high" for success.
+
+### Event Logging
+Since dice rolls are critical to the game's narrative and state, every result (whether physical or digital) must be recorded in the persistent `EventLog`. This allows for debugging, replayability, and potentially auditing "hot streaks" or unusual probability distributions in long-running games.
+

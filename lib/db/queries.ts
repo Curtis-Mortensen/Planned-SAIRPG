@@ -11,6 +11,7 @@ import {
   inArray,
   lt,
   sql,
+  isNull,
   type SQL,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -19,6 +20,7 @@ import type { ArtifactKind } from "@/components/artifact";
 import type { VisibilityType } from "@/components/visibility-selector";
 import { ChatSDKError } from "../errors";
 import { generateUUID } from "../utils";
+import type { GamePhase } from "@/lib/game-state/types";
 import {
   type Chat,
   chat,
@@ -39,6 +41,8 @@ import {
   vote,
   saveSlot,
   type SaveSlot,
+  pendingAction,
+  metaEvent,
 } from "./schema";
 import { generateHashedPassword } from "./utils";
 
@@ -1463,4 +1467,271 @@ export async function upsertPrompt({
       `Failed to upsert prompt: ${_error instanceof Error ? _error.message : String(_error)}`
     );
   }
+}
+
+// =============================================================================
+// PENDING ACTION QUERIES
+// =============================================================================
+
+/**
+ * Get the active (non-completed) pending action for a game
+ * There should only ever be one active pending action per game
+ */
+export async function getActivePendingAction(gameId: string) {
+  const [result] = await db
+    .select()
+    .from(pendingAction)
+    .where(
+      and(
+        eq(pendingAction.gameId, gameId),
+        isNull(pendingAction.completedAt)
+      )
+    )
+    .limit(1);
+  return result ?? null;
+}
+
+/**
+ * Get a pending action by ID
+ */
+export async function getPendingActionById(id: string) {
+  const [result] = await db
+    .select()
+    .from(pendingAction)
+    .where(eq(pendingAction.id, id))
+    .limit(1);
+  return result ?? null;
+}
+
+/**
+ * Create a new pending action
+ * Throws if there's already an active pending action for this game
+ */
+export async function createPendingAction({
+  gameId,
+  chatId,
+  originalInput,
+  timeEstimate,
+  phase = "validating",
+}: {
+  gameId: string;
+  chatId: string;
+  originalInput: string;
+  timeEstimate?: string;
+  phase?: GamePhase;
+}) {
+  const [result] = await db
+    .insert(pendingAction)
+    .values({
+      gameId,
+      chatId,
+      originalInput,
+      timeEstimate,
+      phase,
+    })
+    .returning();
+  return result;
+}
+
+/**
+ * Update a pending action
+ */
+export async function updatePendingAction(
+  id: string,
+  data: Partial<{
+    phase: GamePhase;
+    timeEstimate: string;
+    completedAt: Date;
+  }>
+) {
+  const [result] = await db
+    .update(pendingAction)
+    .set({
+      ...data,
+      updatedAt: new Date(),
+    })
+    .where(eq(pendingAction.id, id))
+    .returning();
+  return result;
+}
+
+/**
+ * Update a pending action's phase
+ */
+export async function updatePendingActionPhase(
+  id: string,
+  phase: GamePhase
+) {
+  return updatePendingAction(id, { phase });
+}
+
+/**
+ * Mark a pending action as completed
+ */
+export async function completePendingAction(id: string) {
+  const [result] = await db
+    .update(pendingAction)
+    .set({ 
+      phase: "idle" as GamePhase,
+      completedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(pendingAction.id, id))
+    .returning();
+  return result;
+}
+
+/**
+ * Get the current game phase for a game
+ * Returns "idle" if no active pending action
+ */
+export async function getCurrentGamePhase(gameId: string): Promise<GamePhase> {
+  const active = await getActivePendingAction(gameId);
+  return active?.phase ?? "idle";
+}
+
+// =============================================================================
+// META EVENT QUERIES
+// =============================================================================
+
+/**
+ * Get all meta events for a pending action, ordered by sequence
+ */
+export async function getMetaEventsByPendingAction(pendingActionId: string) {
+  return db
+    .select()
+    .from(metaEvent)
+    .where(eq(metaEvent.pendingActionId, pendingActionId))
+    .orderBy(asc(metaEvent.sequenceNum));
+}
+
+/**
+ * Get triggered (but not yet resolved) meta events
+ */
+export async function getTriggeredUnresolvedEvents(pendingActionId: string) {
+  return db
+    .select()
+    .from(metaEvent)
+    .where(
+      and(
+        eq(metaEvent.pendingActionId, pendingActionId),
+        eq(metaEvent.triggered, true),
+        isNull(metaEvent.resolvedAt)
+      )
+    )
+    .orderBy(asc(metaEvent.sequenceNum));
+}
+
+/**
+ * Get the next unresolved event for a pending action
+ * Returns the first triggered but unresolved event by sequence number
+ * This avoids drift issues from using an index counter
+ */
+export async function getNextUnresolvedEvent(pendingActionId: string) {
+  const [result] = await db
+    .select()
+    .from(metaEvent)
+    .where(
+      and(
+        eq(metaEvent.pendingActionId, pendingActionId),
+        eq(metaEvent.triggered, true),
+        isNull(metaEvent.resolvedAt)
+      )
+    )
+    .orderBy(asc(metaEvent.sequenceNum))
+    .limit(1);
+  return result ?? null;
+}
+
+/**
+ * Create a meta event (used by meta event proposal module)
+ */
+export async function createMetaEvent({
+  pendingActionId,
+  sequenceNum,
+  type,
+  title,
+  description,
+  probability,
+  severity,
+  triggersCombat = false,
+  timeImpact,
+}: {
+  pendingActionId: string;
+  sequenceNum: number;
+  type: string;
+  title: string;
+  description: string;
+  probability: number;
+  severity: string;
+  triggersCombat?: boolean;
+  timeImpact?: string;
+}) {
+  const [result] = await db
+    .insert(metaEvent)
+    .values({
+      pendingActionId,
+      sequenceNum,
+      type: type as any,
+      title,
+      description,
+      probability,
+      severity: severity as any,
+      triggersCombat,
+      timeImpact,
+    })
+    .returning();
+  return result;
+}
+
+/**
+ * Update a meta event's player decision (accept/reject)
+ */
+export async function updateMetaEventDecision(
+  id: string,
+  playerDecision: "accepted" | "rejected"
+) {
+  const [result] = await db
+    .update(metaEvent)
+    .set({ playerDecision })
+    .where(eq(metaEvent.id, id))
+    .returning();
+  return result;
+}
+
+/**
+ * Update a meta event after probability roll
+ */
+export async function updateMetaEventRoll(
+  id: string,
+  rollResult: number,
+  triggered: boolean
+) {
+  const [result] = await db
+    .update(metaEvent)
+    .set({ rollResult, triggered })
+    .where(eq(metaEvent.id, id))
+    .returning();
+  return result;
+}
+
+/**
+ * Mark a meta event as resolved
+ */
+export async function resolveMetaEvent(id: string) {
+  const [result] = await db
+    .update(metaEvent)
+    .set({ resolvedAt: new Date() })
+    .where(eq(metaEvent.id, id))
+    .returning();
+  return result;
+}
+
+/**
+ * Delete all meta events for a pending action (for regeneration)
+ */
+export async function deleteMetaEventsByPendingAction(pendingActionId: string) {
+  await db
+    .delete(metaEvent)
+    .where(eq(metaEvent.pendingActionId, pendingActionId));
 }

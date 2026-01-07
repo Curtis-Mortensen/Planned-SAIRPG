@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ContextViewId } from "@/lib/constants/navigation";
+import type { GamePhase } from "@/lib/game-state/types";
 
 /**
  * Module IDs for the main navigation areas
@@ -69,6 +70,17 @@ interface GameState {
   // Current session tracking
   currentChatId: string | null;
   setCurrentChatId: (id: string | null) => void;
+
+  // Game phase state machine
+  currentPhase: GamePhase;
+  setCurrentPhase: (phase: GamePhase) => void;
+  pendingActionId: string | null;
+  setPendingActionId: (id: string | null) => void;
+  isInMetaEvent: boolean;
+  setIsInMetaEvent: (value: boolean) => void;
+  
+  // Reset phase state (e.g., when loading a different game)
+  resetPhaseState: () => void;
 }
 
 export const useGameStore = create<GameState>()(
@@ -134,6 +146,21 @@ export const useGameStore = create<GameState>()(
       // Current session
       currentChatId: null,
       setCurrentChatId: (id) => set({ currentChatId: id }),
+
+      // Game phase state
+      currentPhase: "idle" as GamePhase,
+      setCurrentPhase: (phase) => set({ currentPhase: phase }),
+      pendingActionId: null,
+      setPendingActionId: (id) => set({ pendingActionId: id }),
+      isInMetaEvent: false,
+      setIsInMetaEvent: (value) => set({ isInMetaEvent: value }),
+
+      resetPhaseState: () =>
+        set({
+          currentPhase: "idle" as GamePhase,
+          pendingActionId: null,
+          isInMetaEvent: false,
+        }),
     };
     },
     {

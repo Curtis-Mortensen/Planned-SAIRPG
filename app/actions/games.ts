@@ -12,11 +12,12 @@ import {
   getGameByChatId,
   getSavesByGame,
   getSaveCountsByGameIds,
+  getUserById,
+  saveChat,
 } from "@/lib/db/queries";
 import type { GameSession } from "@/lib/db/schema";
 import { ChatSDKError } from "@/lib/errors";
 import { generateUUID } from "@/lib/utils";
-import { saveChat } from "@/lib/db/queries";
 
 export interface GameWithSaveCount extends GameSession {
   saveCount: number;
@@ -61,6 +62,17 @@ export async function createGameAction(params: {
   try {
     const session = await auth();
     if (!session?.user) {
+      return {
+        success: false,
+        error: "Unauthorized",
+      };
+    }
+
+    // Verify user exists in database (handles stale session after DB reset)
+    const existingUser = await getUserById(session.user.id);
+    if (!existingUser) {
+      // User ID from session doesn't exist in database
+      // Return Unauthorized to trigger re-authentication flow
       return {
         success: false,
         error: "Unauthorized",

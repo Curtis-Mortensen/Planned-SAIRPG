@@ -370,7 +370,7 @@ const PurePreviewMessage = ({
             return null;
           })}
 
-          {!isReadonly && message.role !== "system" && (
+          {!isReadonly && (message.role as string) !== "system" && (
             <MessageActions
               chatId={chatId}
               isLoading={isLoading}

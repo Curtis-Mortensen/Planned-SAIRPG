@@ -122,7 +122,7 @@ export async function POST(request: Request) {
       title: "Test Adventure - Tavern Mystery",
     });
 
-    const branchId = gameSessionResult.branchId ?? generateUUID();
+    const dummyBranchId = generateUUID(); // Legacy parameter, not used
     const turnId = generateUUID();
 
     // Create sample events
@@ -131,9 +131,8 @@ export async function POST(request: Request) {
       const sampleEvent = SAMPLE_EVENTS[i];
       const event = await createEventLog({
         sessionId: gameSessionResult.id,
-        branchId,
+        branchId: dummyBranchId,
         sequenceNum: (i + 1).toString(),
-        turnId: sampleEvent.eventType.includes("turn") ? undefined : turnId,
         eventType: sampleEvent.eventType,
         moduleName: sampleEvent.moduleName,
         actor: sampleEvent.actor,

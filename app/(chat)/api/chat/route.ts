@@ -36,11 +36,18 @@ import {
   getOrCreateActiveGame,
   updateGame,
   getPromptByModule,
+  getActivePendingAction,
+  getCurrentGamePhase,
+  createPendingAction,
+  updatePendingAction,
 } from "@/lib/db/queries";
+import { isPhaseBlocking } from "@/lib/game-state/state-machine";
+import { validatePlayerAction } from "@/lib/validator/validator";
 import type { DBMessage } from "@/lib/db/schema";
 import { ChatSDKError } from "@/lib/errors";
 import { createSystemMessage } from "@/lib/system-messages";
 import type { ChatMessage } from "@/lib/types";
+import { asNarratorSettings } from "@/lib/types";
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
 import { generateTitleFromUserMessage } from "../../actions";
 import { calculateCost } from "@/lib/ai/cost";
@@ -100,8 +107,116 @@ export async function POST(request: Request) {
 
     const session = await auth();
 
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return new ChatSDKError("unauthorized:chat").toResponse();
+    }
+
+    // Phase gate: check if the game is in a blocking phase
+    const game = await getGameByChatId(id);
+    if (game) {
+      const currentPhase = await getCurrentGamePhase(game.id);
+
+      if (isPhaseBlocking(currentPhase)) {
+        return Response.json(
+          {
+            code: "bad_request:chat",
+            cause: "Please wait while processing current action...",
+            currentPhase,
+          },
+          { status: 409 }
+        );
+      }
+
+      // If in meta_review phase, don't process as normal chat
+      if (currentPhase === "meta_review") {
+        const activePendingAction = await getActivePendingAction(game.id);
+        return Response.json(
+          {
+            code: "bad_request:chat",
+            cause: "Please review the proposed events before continuing.",
+            pendingActionId: activePendingAction?.id,
+          },
+          { status: 409 }
+        );
+      }
+
+      // Interception: If idle, start the meta event flow
+      if (currentPhase === "idle" && message?.role === "user") {
+        // Extract text content from parts
+        const originalInput = message.parts
+          .filter((p: any) => p.type === "text")
+          .map((p: any) => (p as { text: string }).text)
+          .join(" ");
+
+        if (originalInput.trim()) {
+          // Create pending action - initial phase is validating
+          const pendingAction = await createPendingAction({
+            gameId: game.id,
+            chatId: id,
+            originalInput,
+            phase: "validating",
+          });
+
+          // 1. Run Validator Module
+          const validationResult = await validatePlayerAction({
+            playerInput: originalInput,
+            // characterState, // TODO: Fetch from DB
+            // currentScene,   // TODO: Fetch from DB
+          });
+
+          if (!validationResult.valid) {
+            // Mark as completed/failed
+            await updatePendingAction(pendingAction.id, {
+              phase: "idle",
+              completedAt: new Date(),
+            });
+
+            return Response.json(
+              {
+                code: "bad_request:chat",
+                cause: validationResult.errorCode || "Invalid action description.",
+                validationError: validationResult.errorCode,
+              },
+              { status: 400 }
+            );
+          }
+
+          // 2. Update Pending Action with time estimate and move to meta_proposal
+          await updatePendingAction(pendingAction.id, {
+            phase: "meta_proposal",
+            timeEstimate: validationResult.timeEstimate || "15-30 min",
+          });
+
+          // 3. Trigger Meta Event Generation
+          const generateUrl = new URL(
+            `${request.url.split("/api/")[0]}/api/meta-events/generate`
+          );
+
+          try {
+            await fetch(generateUrl.toString(), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Cookie: request.headers.get("cookie") || "",
+              },
+              body: JSON.stringify({ pendingActionId: pendingAction.id }),
+            });
+          } catch (error) {
+            console.error("Failed to trigger meta event generation:", error);
+          }
+
+          // We return a small data stream part or just a success that useChat can swallow
+          // Actually, returning a data stream part with "intercepted" might be better
+          // but useChat expects a stream. 
+          // Let's try returning a 200 with clear indicator.
+          return Response.json({
+            intercepted: true,
+            phase: "meta_proposal",
+            pendingActionId: pendingAction.id,
+            timeEstimate: validationResult.timeEstimate,
+          });
+        }
+      }
     }
 
     // Verify user exists in database (protects against stale JWT tokens)
@@ -167,16 +282,17 @@ export async function POST(request: Request) {
       
       // Extract opening scene and lore if this is the first message
       if (isFirstUserMessage) {
-        if (narratorPromptData?.settings?.openingScene) {
-          openingSceneText = narratorPromptData.settings.openingScene as string;
+        const narratorSettings = asNarratorSettings(narratorPromptData?.settings);
+        if (narratorSettings.openingScene) {
+          openingSceneText = narratorSettings.openingScene;
         } else {
           // Fallback to default if not in DB
           const { NARRATOR_DEFAULT_SETTINGS } = await import("@/lib/db/prompts/narrator-default");
           openingSceneText = NARRATOR_DEFAULT_SETTINGS.openingScene || "";
         }
         
-        if (narratorPromptData?.settings?.lore) {
-          loreText = narratorPromptData.settings.lore as string;
+        if (narratorSettings.lore) {
+          loreText = narratorSettings.lore;
         } else {
           // Fallback to default if not in DB
           const { NARRATOR_DEFAULT_LORE } = await import("@/lib/db/prompts/narrator-default");
@@ -254,11 +370,18 @@ export async function POST(request: Request) {
 
     // Only save user messages to the database (not tool approval responses)
     if (message?.role === "user") {
-      const messagesToSave = [
+      const messagesToSave: Array<{
+        chatId: string;
+        id: string;
+        role: string;
+        parts: unknown[];
+        attachments: never[];
+        createdAt: Date;
+      }> = [
         {
           chatId: id,
           id: message.id,
-          role: "user" as const,
+          role: "user",
           parts: message.parts,
           attachments: [],
           createdAt: new Date(),
@@ -272,9 +395,8 @@ export async function POST(request: Request) {
           const existingMessages = await getMessagesByChatId({ id });
           const hasOpeningScene = existingMessages.some(
             (msg) => msg.role === "assistant" && 
-            msg.parts.some(
-              (part) => part.type === "text" && 
-              (part as { text: string }).text === openingSceneText
+            Array.isArray(msg.parts) && (msg.parts as Array<{ type: string; text?: string }>).some(
+              (part) => part.type === "text" && part.text === openingSceneText
             )
           );
 
@@ -282,10 +404,10 @@ export async function POST(request: Request) {
             messagesToSave.unshift({
               chatId: id,
               id: generateUUID(),
-              role: "assistant" as const,
+              role: "assistant",
               parts: [
                 {
-                  type: "text" as const,
+                  type: "text",
                   text: openingSceneText,
                 },
               ],
@@ -307,8 +429,8 @@ export async function POST(request: Request) {
             messagesToSave.unshift({
               chatId: id,
               id: sysMsg.id,
-              role: "system" as const,
-              parts: sysMsg.parts,
+              role: "system",
+              parts: sysMsg.parts as unknown[],
               attachments: [],
               createdAt: new Date(Date.now() - 2000), // Earliest to appear first
             });
@@ -317,7 +439,7 @@ export async function POST(request: Request) {
       }
 
       await saveMessages({
-        messages: messagesToSave,
+        messages: messagesToSave as DBMessage[],
       });
     }
 
