@@ -18,6 +18,7 @@ interface PromptSettings {
   temperature: number;
   max_tokens: number;
   lore?: string;
+  openingScene?: string;
 }
 
 interface PromptData {
@@ -39,12 +40,14 @@ export function PromptEditorTab() {
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isLoreExpanded, setIsLoreExpanded] = useState(false);
+  const [isOpeningSceneExpanded, setIsOpeningSceneExpanded] = useState(false);
 
   // Local state for editing
   const [verbosity, setVerbosity] = useState(3);
   const [tone, setTone] = useState(3);
   const [challenge, setChallenge] = useState(3);
   const [lore, setLore] = useState("");
+  const [openingScene, setOpeningScene] = useState("");
   const [promptContent, setPromptContent] = useState("");
 
   // Load prompt data when module changes
@@ -64,6 +67,7 @@ export function PromptEditorTab() {
           setTone(data.settings.tone ?? 3);
           setChallenge(data.settings.challenge ?? 3);
           setLore(data.settings.lore ?? "");
+          setOpeningScene(data.settings.openingScene ?? "");
           setPromptContent(data.content);
           setHasChanges(false);
         } else {
@@ -100,6 +104,7 @@ export function PromptEditorTab() {
             temperature: promptData.settings.temperature,
             max_tokens: promptData.settings.max_tokens,
             lore,
+            openingScene: selectedModule === "narrator" ? openingScene : undefined,
           },
         }),
       });
@@ -127,6 +132,7 @@ export function PromptEditorTab() {
     setTone(promptData.settings.tone ?? 3);
     setChallenge(promptData.settings.challenge ?? 3);
     setLore(promptData.settings.lore ?? "");
+    setOpeningScene(promptData.settings.openingScene ?? "");
     setPromptContent(promptData.content);
     setHasChanges(false);
     toast.info("Changes discarded");
@@ -329,6 +335,41 @@ export function PromptEditorTab() {
             </CollapsibleContent>
           </Collapsible>
         </Card>
+
+        {/* Opening Scene - Collapsible (Narrator only) */}
+        {selectedModule === "narrator" && (
+          <Card className="p-4">
+            <Collapsible open={isOpeningSceneExpanded} onOpenChange={setIsOpeningSceneExpanded}>
+              <CollapsibleTrigger className="flex w-full items-center justify-between">
+                <Label className="font-medium text-sm">Opening Scene</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground text-xs">
+                    {openingScene.length} characters
+                  </span>
+                  {isOpeningSceneExpanded ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-3">
+                <Textarea
+                  value={openingScene}
+                  onChange={(e) => {
+                    setOpeningScene(e.target.value);
+                    markAsChanged();
+                  }}
+                  placeholder="Enter the opening scene message that will be shown when a new game starts. This will be sent along with the player's first action..."
+                  className="min-h-[200px] font-mono text-xs"
+                />
+                <p className="mt-2 text-muted-foreground text-xs">
+                  The opening scene message displayed when a new game starts. This will be sent to the LLM along with the player's first action.
+                </p>
+              </CollapsibleContent>
+            </Collapsible>
+          </Card>
+        )}
 
         {/* System Prompt - Read Only Display */}
         <Card className="p-4">

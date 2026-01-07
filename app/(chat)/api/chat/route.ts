@@ -16,10 +16,6 @@ import { auth, type UserType } from "@/app/(auth)/auth";
 import { entitlementsByUserType } from "@/lib/ai/entitlements";
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
-import { createDocument } from "@/lib/ai/tools/create-document";
-import { getWeather } from "@/lib/ai/tools/get-weather";
-import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
-import { updateDocument } from "@/lib/ai/tools/update-document";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
   createStreamId,
@@ -35,6 +31,7 @@ import {
   createEventLog,
   createGameSession,
   getGameSessions,
+  getPromptByModule,
 } from "@/lib/db/queries";
 import type { DBMessage } from "@/lib/db/schema";
 import { ChatSDKError } from "@/lib/errors";
@@ -150,10 +147,54 @@ export async function POST(request: Request) {
       titlePromise = generateTitleFromUserMessage({ message });
     }
 
-    // Use all messages for tool approval, otherwise DB messages + new message
+    // Check if this is the first user message (new game)
+    const isFirstUserMessage = !isToolApprovalFlow && 
+      message?.role === "user" && 
+      messagesFromDb.length === 0;
+
+    // If it's the first message, fetch the opening scene from narrator prompt
+    let openingSceneText = "";
+    if (isFirstUserMessage) {
+      try {
+        const narratorPrompt = await getPromptByModule("narrator");
+        if (narratorPrompt?.settings?.openingScene) {
+          openingSceneText = narratorPrompt.settings.openingScene as string;
+        } else {
+          // Fallback to default if not in DB
+          const { NARRATOR_DEFAULT_SETTINGS } = await import("@/lib/db/prompts/narrator-default");
+          openingSceneText = NARRATOR_DEFAULT_SETTINGS.openingScene || "";
+        }
+      } catch (error) {
+        console.error("Failed to fetch opening scene:", error);
+        // Continue without opening scene if fetch fails
+      }
+    }
+
+    // Prepend opening scene to first user message if present
+    let firstUserMessage = message as ChatMessage | undefined;
+    if (isFirstUserMessage && openingSceneText && firstUserMessage?.role === "user") {
+      const userText = firstUserMessage.parts
+        .filter(p => p.type === "text")
+        .map(p => (p as { text: string }).text)
+        .join(" ");
+      
+      // Create a new message with opening scene prepended
+      firstUserMessage = {
+        ...firstUserMessage,
+        parts: [
+          ...firstUserMessage.parts.filter(p => p.type !== "text"),
+          {
+            type: "text" as const,
+            text: `${openingSceneText}\n\n${userText}`,
+          },
+        ],
+      };
+    }
+
+    // Use all messages for tool approval, otherwise DB messages + new message (with opening scene if applicable)
     const uiMessages = isToolApprovalFlow
       ? (messages as ChatMessage[])
-      : [...convertToUIMessages(messagesFromDb), message as ChatMessage];
+      : [...convertToUIMessages(messagesFromDb), firstUserMessage as ChatMessage];
 
     const { longitude, latitude, city, country } = geolocation(request);
 
@@ -166,17 +207,48 @@ export async function POST(request: Request) {
 
     // Only save user messages to the database (not tool approval responses)
     if (message?.role === "user") {
-      await saveMessages({
-        messages: [
-          {
+      const messagesToSave = [
+        {
+          chatId: id,
+          id: message.id,
+          role: "user" as const,
+          parts: message.parts,
+          attachments: [],
+          createdAt: new Date(),
+        },
+      ];
+
+      // If this is the first user message, also save the opening scene as an assistant message
+      if (isFirstUserMessage && openingSceneText) {
+        // Check if opening scene message doesn't already exist in DB
+        const existingMessages = await getMessagesByChatId({ id });
+        const hasOpeningScene = existingMessages.some(
+          (msg) => msg.role === "assistant" && 
+          msg.parts.some(
+            (part) => part.type === "text" && 
+            (part as { text: string }).text === openingSceneText
+          )
+        );
+
+        if (!hasOpeningScene) {
+          messagesToSave.unshift({
             chatId: id,
-            id: message.id,
-            role: "user",
-            parts: message.parts,
+            id: generateUUID(),
+            role: "assistant" as const,
+            parts: [
+              {
+                type: "text" as const,
+                text: openingSceneText,
+              },
+            ],
             attachments: [],
-            createdAt: new Date(),
-          },
-        ],
+            createdAt: new Date(Date.now() - 1000), // Slightly earlier to ensure it appears first
+          });
+        }
+      }
+
+      await saveMessages({
+        messages: messagesToSave,
       });
     }
 
@@ -278,14 +350,7 @@ export async function POST(request: Request) {
           system: sysPrompt,
           messages: await convertToModelMessages(uiMessages),
           stopWhen: stepCountIs(5),
-          experimental_activeTools: isReasoningModel
-            ? []
-            : [
-                "getWeather",
-                "createDocument",
-                "updateDocument",
-                "requestSuggestions",
-              ],
+          experimental_activeTools: [],
           experimental_transform: isReasoningModel
             ? undefined
             : smoothStream({ chunking: "word" }),
@@ -296,15 +361,7 @@ export async function POST(request: Request) {
                 },
               }
             : undefined,
-          tools: {
-            getWeather,
-            createDocument: createDocument({ session, dataStream }),
-            updateDocument: updateDocument({ session, dataStream }),
-            requestSuggestions: requestSuggestions({
-              session,
-              dataStream,
-            }),
-          },
+          tools: {},
           experimental_telemetry: {
             isEnabled: isProductionEnvironment,
             functionId: "stream-text",

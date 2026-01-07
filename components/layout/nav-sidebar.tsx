@@ -1,7 +1,8 @@
 "use client";
 
-import { Settings, User } from "lucide-react";
+import { Home, Settings, User } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Sidebar,
   SidebarContent,
@@ -17,6 +18,8 @@ import { NavItem } from "./nav-item";
 
 export function NavSidebar() {
   const { setOpenMobile } = useSidebar();
+  const pathname = usePathname();
+  const isHomeActive = pathname === "/";
 
   return (
     <Sidebar
@@ -28,6 +31,25 @@ export function NavSidebar() {
     >
       <SidebarHeader className="items-center px-0">
         <SidebarMenu className="items-center">
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              className="size-10 p-0 flex items-center justify-center"
+              isActive={isHomeActive}
+              tooltip="SAI"
+            >
+              <Link
+                href="/"
+                onClick={() => setOpenMobile(false)}
+              >
+                <Home
+                  aria-hidden="true"
+                  className="size-5 shrink-0"
+                />
+                <span className="sr-only">SAI</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild

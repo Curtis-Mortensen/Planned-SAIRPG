@@ -8,6 +8,8 @@ import type { ChatMessage } from "@/lib/types";
 import { useDataStream } from "./data-stream-provider";
 import { Greeting } from "./greeting";
 import { PreviewMessage, ThinkingMessage } from "./message";
+import { SuggestedActions } from "./suggested-actions";
+import type { VisibilityType } from "./visibility-selector";
 
 type MessagesProps = {
   addToolApprovalResponse: UseChatHelpers<ChatMessage>["addToolApprovalResponse"];
@@ -17,9 +19,11 @@ type MessagesProps = {
   messages: ChatMessage[];
   setMessages: UseChatHelpers<ChatMessage>["setMessages"];
   regenerate: UseChatHelpers<ChatMessage>["regenerate"];
+  sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
   isReadonly: boolean;
   isArtifactVisible: boolean;
   selectedModelId: string;
+  selectedVisibilityType?: VisibilityType;
 };
 
 function PureMessages({
@@ -30,8 +34,10 @@ function PureMessages({
   messages,
   setMessages,
   regenerate,
+  sendMessage,
   isReadonly,
   selectedModelId: _selectedModelId,
+  selectedVisibilityType = "private",
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -54,28 +60,47 @@ function PureMessages({
         <div className="mx-auto flex min-w-0 max-w-4xl flex-col gap-4 px-2 py-4 md:gap-6 md:px-4">
           {messages.length === 0 && <Greeting />}
 
-          {messages.map((message, index) => (
-            <PreviewMessage
-              addToolApprovalResponse={addToolApprovalResponse}
-              chatId={chatId}
-              isLoading={
-                status === "streaming" && messages.length - 1 === index
-              }
-              isReadonly={isReadonly}
-              key={message.id}
-              message={message}
-              regenerate={regenerate}
-              requiresScrollPadding={
-                hasSentMessage && index === messages.length - 1
-              }
-              setMessages={setMessages}
-              vote={
-                votes
-                  ? votes.find((vote) => vote.messageId === message.id)
-                  : undefined
-              }
-            />
-          ))}
+          {messages.map((message, index) => {
+            const isLastMessage = index === messages.length - 1;
+            // Check if this is the opening scene: first message, assistant role, and no user messages yet
+            const isOpeningScene = 
+              message.role === "assistant" && 
+              index === 0 && 
+              !messages.some((msg) => msg.role === "user");
+
+            return (
+              <div key={message.id}>
+                <PreviewMessage
+                  addToolApprovalResponse={addToolApprovalResponse}
+                  chatId={chatId}
+                  isLoading={
+                    status === "streaming" && isLastMessage
+                  }
+                  isReadonly={isReadonly}
+                  message={message}
+                  regenerate={regenerate}
+                  requiresScrollPadding={
+                    hasSentMessage && isLastMessage
+                  }
+                  setMessages={setMessages}
+                  vote={
+                    votes
+                      ? votes.find((vote) => vote.messageId === message.id)
+                      : undefined
+                  }
+                />
+                {isOpeningScene && !isReadonly && (
+                  <div className="px-2 md:px-4">
+                    <SuggestedActions
+                      chatId={chatId}
+                      selectedVisibilityType={selectedVisibilityType}
+                      sendMessage={sendMessage}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {status === "submitted" &&
             !messages.some((msg) =>

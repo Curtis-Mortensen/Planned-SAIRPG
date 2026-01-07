@@ -101,8 +101,12 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                     <Button
                       className="h-8 p-1 md:h-fit md:p-2"
                       onClick={() => {
+                        // Clear cached input for fresh start
+                        localStorage.removeItem("input");
+                        // Clear last-play-id cookie
+                        document.cookie = "last-play-id=; path=/; max-age=0";
                         setOpenMobile(false);
-                        router.push("/");
+                        router.push("/play?new=true");
                         router.refresh();
                       }}
                       type="button"
@@ -112,7 +116,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent align="end" className="hidden md:block">
-                    New Chat
+                    New Game
                   </TooltipContent>
                 </Tooltip>
               </div>

@@ -2,6 +2,7 @@
 
 import type { UseChatHelpers } from "@ai-sdk/react";
 import { motion } from "framer-motion";
+import { usePathname } from "next/navigation";
 import { memo } from "react";
 import type { ChatMessage } from "@/lib/types";
 import { Suggestion } from "./elements/suggestion";
@@ -14,6 +15,10 @@ type SuggestedActionsProps = {
 };
 
 function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
+  const pathname = usePathname();
+  // Determine the base path from current URL (play or chat)
+  const basePath = pathname.startsWith("/play") ? "/play" : "/chat";
+
   const suggestedActions = [
     "I try to gather some spare wood to craft a rudementary weapon.",
     "Look around to get the lay of the land.",
@@ -37,7 +42,7 @@ function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
           <Suggestion
             className="h-auto w-full whitespace-normal p-3 text-left"
             onClick={(suggestion) => {
-              window.history.pushState({}, "", `/chat/${chatId}`);
+              window.history.pushState({}, "", `${basePath}/${chatId}`);
               sendMessage({
                 role: "user",
                 parts: [{ type: "text", text: suggestion }],

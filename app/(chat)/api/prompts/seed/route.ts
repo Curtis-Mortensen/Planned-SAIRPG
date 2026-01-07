@@ -16,6 +16,7 @@ export async function POST() {
       settings: {
         ...NARRATOR_DEFAULT_SETTINGS,
         lore: NARRATOR_DEFAULT_LORE,
+        openingScene: NARRATOR_DEFAULT_SETTINGS.openingScene,
       },
     });
 

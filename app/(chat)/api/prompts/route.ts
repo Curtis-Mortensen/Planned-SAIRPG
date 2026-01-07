@@ -30,6 +30,7 @@ export async function GET(request: Request) {
         settings: {
           ...NARRATOR_DEFAULT_SETTINGS,
           lore: NARRATOR_DEFAULT_LORE,
+          openingScene: NARRATOR_DEFAULT_SETTINGS.openingScene,
         },
         isActive: true,
         createdAt: new Date().toISOString(),

@@ -4,6 +4,7 @@ import type { UseChatHelpers } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
 import equal from "fast-deep-equal";
 import { CheckIcon } from "lucide-react";
+import { usePathname } from "next/navigation";
 import {
   type ChangeEvent,
   type Dispatch,
@@ -43,7 +44,6 @@ import {
 } from "./elements/prompt-input";
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from "./icons";
 import { PreviewAttachment } from "./preview-attachment";
-import { SuggestedActions } from "./suggested-actions";
 import { Button } from "./ui/button";
 import type { VisibilityType } from "./visibility-selector";
 
@@ -86,6 +86,9 @@ function PureMultimodalInput({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
+  const pathname = usePathname();
+  // Determine the base path from current URL (play or chat)
+  const basePath = pathname.startsWith("/play") ? "/play" : "/chat";
 
   const adjustHeight = useCallback(() => {
     if (textareaRef.current) {
@@ -145,7 +148,7 @@ function PureMultimodalInput({
   const [uploadQueue, setUploadQueue] = useState<string[]>([]);
 
   const submitForm = useCallback(() => {
-    window.history.pushState({}, "", `/chat/${chatId}`);
+    window.history.pushState({}, "", `${basePath}/${chatId}`);
 
     sendMessage({
       role: "user",
@@ -181,6 +184,7 @@ function PureMultimodalInput({
     width,
     chatId,
     resetHeight,
+    basePath,
   ]);
 
   const uploadFile = useCallback(async (file: File) => {
@@ -297,15 +301,6 @@ function PureMultimodalInput({
 
   return (
     <div className={cn("relative flex w-full flex-col gap-4", className)}>
-      {messages.length === 0 &&
-        attachments.length === 0 &&
-        uploadQueue.length === 0 && (
-          <SuggestedActions
-            chatId={chatId}
-            selectedVisibilityType={selectedVisibilityType}
-            sendMessage={sendMessage}
-          />
-        )}
 
       <input
         className="-top-4 -left-4 pointer-events-none fixed size-0.5 opacity-0"
