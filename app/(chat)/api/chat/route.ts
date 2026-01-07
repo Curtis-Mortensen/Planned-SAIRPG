@@ -14,7 +14,9 @@ import {
 } from "resumable-stream";
 import { auth, type UserType } from "@/app/(auth)/auth";
 import { entitlementsByUserType } from "@/lib/ai/entitlements";
-import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
+import { type RequestHints, systemPrompt, buildNarratorPrompt } from "@/lib/ai/prompts";
+import type { NarratorSettings } from "@/lib/ai/narrator-config";
+import { getVerbosityLabel, getToneLabel, getChallengeLabel } from "@/lib/ai/narrator-config";
 import { getLanguageModel } from "@/lib/ai/providers";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
@@ -28,13 +30,16 @@ import {
   saveMessages,
   updateChatTitleById,
   updateMessage,
-  createEventLog,
-  createGameSession,
-  getGameSessions,
+  createEvent,
+  getGameByChatId,
+  getActiveGame,
+  getOrCreateActiveGame,
+  updateGame,
   getPromptByModule,
 } from "@/lib/db/queries";
 import type { DBMessage } from "@/lib/db/schema";
 import { ChatSDKError } from "@/lib/errors";
+import { createSystemMessage } from "@/lib/system-messages";
 import type { ChatMessage } from "@/lib/types";
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
 import { generateTitleFromUserMessage } from "../../actions";
@@ -152,49 +157,91 @@ export async function POST(request: Request) {
       message?.role === "user" && 
       messagesFromDb.length === 0;
 
-    // If it's the first message, fetch the opening scene from narrator prompt
+    // Fetch narrator prompt for system prompt, opening scene, and lore
+    let narratorPromptData: Awaited<ReturnType<typeof getPromptByModule>> = null;
     let openingSceneText = "";
-    if (isFirstUserMessage) {
-      try {
-        const narratorPrompt = await getPromptByModule("narrator");
-        if (narratorPrompt?.settings?.openingScene) {
-          openingSceneText = narratorPrompt.settings.openingScene as string;
+    let loreText = "";
+    
+    try {
+      narratorPromptData = await getPromptByModule("narrator");
+      
+      // Extract opening scene and lore if this is the first message
+      if (isFirstUserMessage) {
+        if (narratorPromptData?.settings?.openingScene) {
+          openingSceneText = narratorPromptData.settings.openingScene as string;
         } else {
           // Fallback to default if not in DB
           const { NARRATOR_DEFAULT_SETTINGS } = await import("@/lib/db/prompts/narrator-default");
           openingSceneText = NARRATOR_DEFAULT_SETTINGS.openingScene || "";
         }
-      } catch (error) {
-        console.error("Failed to fetch opening scene:", error);
-        // Continue without opening scene if fetch fails
+        
+        if (narratorPromptData?.settings?.lore) {
+          loreText = narratorPromptData.settings.lore as string;
+        } else {
+          // Fallback to default if not in DB
+          const { NARRATOR_DEFAULT_LORE } = await import("@/lib/db/prompts/narrator-default");
+          loreText = NARRATOR_DEFAULT_LORE || "";
+        }
       }
+    } catch (error) {
+      console.error("Failed to fetch narrator prompt:", error);
+      // Continue without narrator prompt - will fall back to default system prompt
     }
 
-    // Prepend opening scene to first user message if present
+    // Append lore to first user message if present
     let firstUserMessage = message as ChatMessage | undefined;
-    if (isFirstUserMessage && openingSceneText && firstUserMessage?.role === "user") {
+    if (isFirstUserMessage && loreText && firstUserMessage?.role === "user") {
       const userText = firstUserMessage.parts
         .filter(p => p.type === "text")
         .map(p => (p as { text: string }).text)
         .join(" ");
       
-      // Create a new message with opening scene prepended
+      // Create a new message with lore appended
       firstUserMessage = {
         ...firstUserMessage,
         parts: [
           ...firstUserMessage.parts.filter(p => p.type !== "text"),
           {
             type: "text" as const,
-            text: `${openingSceneText}\n\n${userText}`,
+            text: `${userText}\n\n---\n\n${loreText}`,
           },
         ],
       };
     }
 
-    // Use all messages for tool approval, otherwise DB messages + new message (with opening scene if applicable)
-    const uiMessages = isToolApprovalFlow
-      ? (messages as ChatMessage[])
-      : [...convertToUIMessages(messagesFromDb), firstUserMessage as ChatMessage];
+    // Build UI messages: for tool approval use all messages, otherwise DB messages + system message (if first) + new message
+    let uiMessages: ChatMessage[];
+    if (isToolApprovalFlow) {
+      uiMessages = messages as ChatMessage[];
+    } else {
+      const dbMessages = convertToUIMessages(messagesFromDb);
+      
+      // Add system message "World Lore Loaded" before first AI response if this is the first user message
+      if (isFirstUserMessage && loreText) {
+        const systemMessage = createSystemMessage("world_lore_loaded");
+        
+        // Find opening scene in dbMessages (first assistant message) and insert system message before it
+        const openingSceneIndex = dbMessages.findIndex(
+          (msg) => msg.role === "assistant" && 
+          msg.parts.some(
+            (part) => part.type === "text" && 
+            (part as { text: string }).text === openingSceneText
+          )
+        );
+        
+        if (openingSceneIndex >= 0) {
+          // Insert system message before opening scene
+          const beforeOpeningScene = dbMessages.slice(0, openingSceneIndex);
+          const openingSceneAndAfter = dbMessages.slice(openingSceneIndex);
+          uiMessages = [...beforeOpeningScene, systemMessage, ...openingSceneAndAfter, firstUserMessage as ChatMessage];
+        } else {
+          // No opening scene found, add system message first
+          uiMessages = [systemMessage, ...dbMessages, firstUserMessage as ChatMessage];
+        }
+      } else {
+        uiMessages = [...dbMessages, firstUserMessage as ChatMessage];
+      }
+    }
 
     const { longitude, latitude, city, country } = geolocation(request);
 
@@ -218,32 +265,54 @@ export async function POST(request: Request) {
         },
       ];
 
-      // If this is the first user message, also save the opening scene as an assistant message
-      if (isFirstUserMessage && openingSceneText) {
+      // If this is the first user message, save the opening scene as an assistant message and system message
+      if (isFirstUserMessage) {
         // Check if opening scene message doesn't already exist in DB
-        const existingMessages = await getMessagesByChatId({ id });
-        const hasOpeningScene = existingMessages.some(
-          (msg) => msg.role === "assistant" && 
-          msg.parts.some(
-            (part) => part.type === "text" && 
-            (part as { text: string }).text === openingSceneText
-          )
-        );
+        if (openingSceneText) {
+          const existingMessages = await getMessagesByChatId({ id });
+          const hasOpeningScene = existingMessages.some(
+            (msg) => msg.role === "assistant" && 
+            msg.parts.some(
+              (part) => part.type === "text" && 
+              (part as { text: string }).text === openingSceneText
+            )
+          );
 
-        if (!hasOpeningScene) {
-          messagesToSave.unshift({
-            chatId: id,
-            id: generateUUID(),
-            role: "assistant" as const,
-            parts: [
-              {
-                type: "text" as const,
-                text: openingSceneText,
-              },
-            ],
-            attachments: [],
-            createdAt: new Date(Date.now() - 1000), // Slightly earlier to ensure it appears first
-          });
+          if (!hasOpeningScene) {
+            messagesToSave.unshift({
+              chatId: id,
+              id: generateUUID(),
+              role: "assistant" as const,
+              parts: [
+                {
+                  type: "text" as const,
+                  text: openingSceneText,
+                },
+              ],
+              attachments: [],
+              createdAt: new Date(Date.now() - 1500), // After system message
+            });
+          }
+        }
+        
+        // Save system message "World Lore Loaded" if lore exists (should appear before opening scene)
+        if (loreText) {
+          const existingMessages = await getMessagesByChatId({ id });
+          const hasSystemMsg = existingMessages.some(
+            (msg) => msg.role === "system"
+          );
+
+          if (!hasSystemMsg) {
+            const sysMsg = createSystemMessage("world_lore_loaded");
+            messagesToSave.unshift({
+              chatId: id,
+              id: sysMsg.id,
+              role: "system" as const,
+              parts: sysMsg.parts,
+              attachments: [],
+              createdAt: new Date(Date.now() - 2000), // Earliest to appear first
+            });
+          }
         }
       }
 
@@ -252,37 +321,115 @@ export async function POST(request: Request) {
       });
     }
 
+    // Log lore loading event if lore was loaded (for first user message)
+    if (isFirstUserMessage && loreText) {
+      try {
+        let game = await getGameByChatId(id);
+        if (!game) {
+          game = await getOrCreateActiveGame(session.user.id);
+          if (game.chatId !== id) {
+            await updateGame({ gameId: game.id, chatId: id });
+            game = { ...game, chatId: id };
+          }
+        }
+        
+        await createEvent({
+          gameId: game.id,
+          sequenceNum: (Date.now() - 1).toString(), // Slightly before system prompt
+          eventType: "lore_loaded",
+          moduleName: "narrator",
+          actor: "system",
+          payload: {
+            chatId: id,
+            loreLength: loreText.length,
+            hasLore: true,
+          },
+        });
+      } catch (error) {
+        // Log error but don't fail the chat request
+        console.error("Failed to log lore loaded event:", error);
+      }
+    }
+
     // Generate system prompt BEFORE the logging try block so it's always available for streamText
-    const sysPrompt = systemPrompt({ selectedChatModel, requestHints });
+    // Use narrator prompt with YAML configuration if available, otherwise fall back to default
+    let sysPrompt: string;
+    let narratorSettings: NarratorSettings | null = null;
+    
+    if (narratorPromptData) {
+      // Build narrator system prompt with YAML personality configuration
+      narratorSettings = narratorPromptData.settings as NarratorSettings;
+      sysPrompt = buildNarratorPrompt({
+        baseContent: narratorPromptData.content,
+        settings: narratorSettings,
+        requestHints,
+      });
+    } else {
+      // Fall back to default narrator prompt if DB fetch failed
+      try {
+        const { NARRATOR_DEFAULT_PROMPT, NARRATOR_DEFAULT_SETTINGS, NARRATOR_DEFAULT_LORE } = 
+          await import("@/lib/db/prompts/narrator-default");
+        narratorSettings = {
+          ...NARRATOR_DEFAULT_SETTINGS,
+          lore: NARRATOR_DEFAULT_LORE,
+        };
+        sysPrompt = buildNarratorPrompt({
+          baseContent: NARRATOR_DEFAULT_PROMPT,
+          settings: narratorSettings,
+          requestHints,
+        });
+      } catch {
+        // Ultimate fallback to basic system prompt
+        sysPrompt = systemPrompt({ selectedChatModel, requestHints });
+      }
+    }
 
     // --- SAIRPG LOGGING INTEGRATION ---
     // Event logging is non-blocking - if it fails, we log the error but continue with chat
-    // Declare these outside try block so they're accessible in onFinish callback
-    let sessionId: string | undefined;
-    let branchId: string | undefined;
+    // Declare this outside try block so it's accessible in onFinish callback
+    let gameId: string | undefined;
     
     try {
-      // 1. Get or create active game session
-      const gameSessions = await getGameSessions({ userId: session.user.id });
-      let gameSession = gameSessions.find(s => s.isActive);
+      // 1. Find or create game for this chat
+      let game = await getGameByChatId(id);
       
-      if (!gameSession) {
-        const newSession = await createGameSession({
-          userId: session.user.id,
-          title: "New Adventure",
-        });
-        gameSession = newSession;
+      if (!game) {
+        // No game exists for this chat, get or create active game
+        game = await getOrCreateActiveGame(session.user.id);
+        
+        // Update game to use this chatId
+        if (game.chatId !== id) {
+          await updateGame({ gameId: game.id, chatId: id });
+          game = { ...game, chatId: id };
+        }
       }
 
-      sessionId = gameSession.id;
-      // Use the session's current branch or a fallback if somehow null (shouldn't happen with proper schema/defaults)
-      branchId = gameSession.branchId || generateUUID();
+      gameId = game.id;
 
-      // 2. Log System Prompt (skip for tool approval flow as we only care about the initial generation or updated generation)
+      // 2. Log Personality Settings if narrator settings are available
+      if (narratorSettings && !isToolApprovalFlow) {
+        await createEvent({
+          gameId,
+          sequenceNum: (Date.now() - 500).toString(), // Before system prompt
+          eventType: "personality_sent",
+          moduleName: "narrator",
+          actor: "system",
+          payload: {
+            verbosity: narratorSettings.verbosity ?? 3,
+            verbosityLabel: getVerbosityLabel(narratorSettings.verbosity ?? 3),
+            tone: narratorSettings.tone ?? 3,
+            toneLabel: getToneLabel(narratorSettings.tone ?? 3),
+            challenge: narratorSettings.challenge ?? 3,
+            challengeLabel: getChallengeLabel(narratorSettings.challenge ?? 3),
+            chatId: id,
+          },
+        });
+      }
+
+      // 3. Log System Prompt (skip for tool approval flow as we only care about the initial generation or updated generation)
       
-      await createEventLog({
-        sessionId,
-        branchId,
+      await createEvent({
+        gameId,
         sequenceNum: Date.now().toString(), // Using timestamp as detailed sequence for now
         eventType: "system_prompt",
         moduleName: "system",
@@ -293,7 +440,7 @@ export async function POST(request: Request) {
         },
       });
 
-      // 3. Log User Message as Player Action
+      // 4. Log User Message as Player Action
       // We only log this if it's a new user message
       if (message?.role === "user") {
         const userText = message.parts
@@ -301,9 +448,8 @@ export async function POST(request: Request) {
           .map(p => (p as { text: string }).text)
           .join(" ");
 
-        await createEventLog({
-          sessionId,
-          branchId,
+        await createEvent({
+          gameId,
           sequenceNum: Date.now().toString(),
           eventType: "player_action",
           moduleName: "player",
@@ -420,7 +566,7 @@ export async function POST(request: Request) {
           // --- SAIRPG LOGGING INTEGRATION ---
           // 4. Log AI Response as Narrator Response
           // Only log the assistant's final response
-          if (sessionId && branchId) {
+          if (gameId) {
             try {
               const assistantMessages = finishedMessages.filter(m => m.role === "assistant");
               for (const msg of assistantMessages) {
@@ -430,11 +576,8 @@ export async function POST(request: Request) {
                   .join(" ");
 
                 if (assistantText) {
-                   // Re-fetch active session just in case, but using captured variables is fine for now
-                   // In a real app we might want to ensure we're on the latest branch if it changed during generation
-                   await createEventLog({
-                     sessionId,
-                     branchId,
+                   await createEvent({
+                     gameId,
                      sequenceNum: Date.now().toString(),
                      eventType: "narrator_response",
                      moduleName: "narrator",

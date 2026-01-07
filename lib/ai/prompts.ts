@@ -1,5 +1,9 @@
 import type { Geo } from "@vercel/functions";
 import type { ArtifactKind } from "@/components/artifact";
+import {
+  buildNarratorSystemPrompt,
+  type NarratorSettings,
+} from "./narrator-config";
 
 export const artifactsPrompt = `
 Artifacts is a special user interface mode that helps users with writing, editing, and other content creation tasks. When artifact is open, it is on the right side of the screen, while the conversation is on the left side. When creating or updating documents, changes are reflected in real-time on the artifacts and visible to the user.
@@ -67,6 +71,30 @@ export const systemPrompt = ({
 
   // Artifacts are disabled - return prompt without artifacts instructions
   return `${regularPrompt}\n\n${requestPrompt}`;
+};
+
+/**
+ * Builds the complete narrator system prompt with YAML configuration.
+ * This should be used when a narrator prompt is available from the database.
+ *
+ * @param baseContent - The base prompt content (without YAML)
+ * @param settings - The narrator settings (verbosity, tone, challenge, lore)
+ * @param requestHints - Geo hints from the request
+ * @returns The complete system prompt with YAML configuration prepended
+ */
+export const buildNarratorPrompt = ({
+  baseContent,
+  settings,
+  requestHints,
+}: {
+  baseContent: string;
+  settings: NarratorSettings;
+  requestHints: RequestHints;
+}): string => {
+  const narratorPrompt = buildNarratorSystemPrompt(baseContent, settings);
+  const requestPrompt = getRequestPromptFromHints(requestHints);
+
+  return `${narratorPrompt}\n\n${requestPrompt}`;
 };
 
 export const codePrompt = `

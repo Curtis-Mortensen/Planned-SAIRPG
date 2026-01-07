@@ -62,10 +62,13 @@ function PureMessages({
 
           {messages.map((message, index) => {
             const isLastMessage = index === messages.length - 1;
-            // Check if this is the opening scene: first message, assistant role, and no user messages yet
-            const isOpeningScene = 
+            // Check if this is the opening scene: first assistant message and no user messages yet
+            // Note: there may be system messages before the opening scene (e.g., lore loaded)
+            const isFirstAssistantMessage = 
               message.role === "assistant" && 
-              index === 0 && 
+              messages.findIndex((msg) => msg.role === "assistant") === index;
+            const isOpeningScene = 
+              isFirstAssistantMessage && 
               !messages.some((msg) => msg.role === "user");
 
             return (

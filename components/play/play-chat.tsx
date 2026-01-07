@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import type { ChatMessage } from "@/lib/types";
 import type { VisibilityType } from "@/components/visibility-selector";
 import { ContextPanel } from "./context-panel";
+import { useGameStore } from "@/lib/stores/game-store";
 
 interface PlayChatProps {
   id: string;
@@ -23,9 +24,17 @@ export function PlayChat({
   isReadonly,
   autoResume,
 }: PlayChatProps) {
+  const setCurrentChatId = useGameStore((s) => s.setCurrentChatId);
+
   useEffect(() => {
     document.cookie = `last-play-id=${id}; path=/`;
-  }, [id]);
+    setCurrentChatId(id);
+
+    // Clear currentChatId when unmounting (leaving play page)
+    return () => {
+      setCurrentChatId(null);
+    };
+  }, [id, setCurrentChatId]);
 
   return (
     <ContextPanel chatId={id}>

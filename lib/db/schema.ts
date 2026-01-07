@@ -143,6 +143,7 @@ export const suggestion = pgTable(
   (table) => ({
     pk: primaryKey({ columns: [table.id] }),
     documentRef: foreignKey({
+      name: "Suggestion_document_fk",
       columns: [table.documentId, table.documentCreatedAt],
       foreignColumns: [document.id, document.createdAt],
     }),
@@ -173,16 +174,14 @@ export type Stream = InferSelectModel<typeof stream>;
 // SAIRPG CORE TABLES
 // =============================================================================
 
-// Game Sessions
+// Game Sessions (represents a Game in the new architecture)
 export const gameSession = pgTable("GameSession", {
   id: uuid("id").primaryKey().notNull().defaultRandom(),
   userId: uuid("userId")
     .notNull()
     .references(() => user.id),
-  worldId: uuid("worldId"),
   title: text("title").notNull().default("Untitled Adventure"),
-  branchId: uuid("branchId").defaultRandom(),
-  parentBranchId: uuid("parentBranchId"),
+  chatId: uuid("chatId").references(() => chat.id, { onDelete: "set null" }), // The ACTIVE chat for this game
   isActive: boolean("isActive").notNull().default(true),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
@@ -193,19 +192,15 @@ export type GameSession = InferSelectModel<typeof gameSession>;
 // Event Log: Append-only log of all game events
 export const eventLog = pgTable("EventLog", {
   id: uuid("id").primaryKey().notNull().defaultRandom(),
-  sessionId: uuid("sessionId")
+  gameId: uuid("gameId")
     .notNull()
     .references(() => gameSession.id, { onDelete: "cascade" }),
-  branchId: uuid("branchId").notNull(),
+  saveId: uuid("saveId").references(() => saveSlot.id, { onDelete: "cascade" }), // If this is a copied event for a save
   sequenceNum: text("sequenceNum").notNull(), // Using text for bigint compatibility
-  turnId: uuid("turnId"),
   eventType: varchar("eventType", { length: 100 }).notNull(),
   moduleName: varchar("moduleName", { length: 100 }).notNull().default("system"),
   actor: varchar("actor", { length: 50 }).notNull().default("system"),
   payload: json("payload").notNull().default({}),
-  parentEventId: uuid("parentEventId"),
-  validFromBranch: uuid("validFromBranch"),
-  invalidatedAtBranch: uuid("invalidatedAtBranch"),
   cost: text("cost"), // Storing as text for precision, similar to other numeric fields if needed, or real/numeric
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
@@ -230,7 +225,7 @@ export type Prompt = InferSelectModel<typeof prompt>;
 // Artifacts: Every AI call is logged for debugging/replay
 export const artifact = pgTable("Artifact", {
   id: uuid("id").primaryKey().notNull().defaultRandom(),
-  sessionId: uuid("sessionId").references(() => gameSession.id, { onDelete: "cascade" }),
+  gameId: uuid("gameId").references(() => gameSession.id, { onDelete: "cascade" }),
   eventId: uuid("eventId").references(() => eventLog.id, { onDelete: "set null" }),
   promptId: uuid("promptId").references(() => prompt.id, { onDelete: "set null" }),
   moduleName: varchar("moduleName", { length: 100 }).notNull(),
@@ -248,18 +243,20 @@ export const artifact = pgTable("Artifact", {
 
 export type Artifact = InferSelectModel<typeof artifact>;
 
-// Branches: Track timeline branches for save/load/edit
-export const branch = pgTable("Branch", {
+// Save slots for player saves
+export const saveSlot = pgTable("SaveSlot", {
   id: uuid("id").primaryKey().notNull().defaultRandom(),
-  sessionId: uuid("sessionId")
+  gameId: uuid("gameId")
     .notNull()
     .references(() => gameSession.id, { onDelete: "cascade" }),
-  parentBranchId: uuid("parentBranchId"),
-  forkEventId: uuid("forkEventId").references(() => eventLog.id),
-  name: varchar("name", { length: 255 }),
+  chatId: uuid("chatId")
+    .notNull()
+    .references(() => chat.id, { onDelete: "cascade" }), // The COPIED chat with messages at save time
+  name: varchar("name", { length: 255 }).notNull(),
+  turnNumber: text("turnNumber").notNull(),
+  messageCount: text("messageCount").notNull(), // Number of messages at save time
   description: text("description"),
-  isActive: boolean("isActive").notNull().default(false),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
-export type Branch = InferSelectModel<typeof branch>;
+export type SaveSlot = InferSelectModel<typeof saveSlot>;

@@ -6,6 +6,8 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { NavSidebar } from "./nav-sidebar";
+import { NewGameConfirmDialog } from "@/components/play/new-game-confirm-dialog";
+import { NavigateHomeConfirmDialog } from "@/components/play/navigate-home-confirm-dialog";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -22,6 +24,8 @@ export function AppShell({ children }: AppShellProps) {
         </header>
         <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
       </SidebarInset>
+      <NewGameConfirmDialog />
+      <NavigateHomeConfirmDialog />
     </SidebarProvider>
   );
 }

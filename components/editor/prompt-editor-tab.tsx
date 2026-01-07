@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useGameStore } from "@/lib/stores/game-store";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -8,8 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, ChevronRight, Save, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronRight, Save, RotateCcw, FileCode } from "lucide-react";
 import { toast } from "sonner";
+import { generateNarratorYamlConfig } from "@/lib/ai/narrator-config";
 
 interface PromptSettings {
   verbosity: number;
@@ -41,6 +42,7 @@ export function PromptEditorTab() {
   const [hasChanges, setHasChanges] = useState(false);
   const [isLoreExpanded, setIsLoreExpanded] = useState(false);
   const [isOpeningSceneExpanded, setIsOpeningSceneExpanded] = useState(false);
+  const [isYamlPreviewExpanded, setIsYamlPreviewExpanded] = useState(false);
 
   // Local state for editing
   const [verbosity, setVerbosity] = useState(3);
@@ -141,6 +143,16 @@ export function PromptEditorTab() {
   const markAsChanged = () => {
     if (!hasChanges) setHasChanges(true);
   };
+
+  // Generate live YAML preview based on current slider values
+  const yamlPreview = useMemo(() => {
+    return generateNarratorYamlConfig({
+      verbosity,
+      tone,
+      challenge,
+      lore,
+    });
+  }, [verbosity, tone, challenge, lore]);
 
   if (!selectedModule) {
     return (
@@ -371,17 +383,51 @@ export function PromptEditorTab() {
           </Card>
         )}
 
+        {/* YAML Configuration Preview - Collapsible */}
+        <Card className="p-4">
+          <Collapsible open={isYamlPreviewExpanded} onOpenChange={setIsYamlPreviewExpanded}>
+            <CollapsibleTrigger className="flex w-full items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileCode className="h-4 w-4 text-muted-foreground" />
+                <Label className="font-medium text-sm">YAML Configuration Preview</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground text-xs">
+                  {hasChanges ? "Updated" : "Current"}
+                </span>
+                {isYamlPreviewExpanded ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-3">
+              <Textarea
+                value={yamlPreview}
+                readOnly
+                className="min-h-[400px] cursor-default bg-muted/30 font-mono text-xs"
+              />
+              <p className="mt-2 text-muted-foreground text-xs">
+                This YAML configuration is automatically generated from your slider settings 
+                and prepended to the system prompt when you save. The AI uses these values 
+                to adjust its narrative style.
+              </p>
+            </CollapsibleContent>
+          </Collapsible>
+        </Card>
+
         {/* System Prompt - Read Only Display */}
         <Card className="p-4">
           <div className="space-y-3">
-            <Label className="font-medium text-sm">System Prompt (Read-Only)</Label>
+            <Label className="font-medium text-sm">Base System Prompt (Read-Only)</Label>
             <Textarea
               value={promptContent}
               readOnly
               className="min-h-[300px] cursor-default font-mono text-xs opacity-75"
             />
             <p className="text-muted-foreground text-xs">
-              The core system prompt template. Advanced editing coming soon.
+              The core system prompt template. The YAML configuration above is prepended to this when the game runs.
             </p>
           </div>
         </Card>

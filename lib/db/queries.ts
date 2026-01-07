@@ -37,6 +37,8 @@ import {
   type User,
   user,
   vote,
+  saveSlot,
+  type SaveSlot,
 } from "./schema";
 import { generateHashedPassword } from "./utils";
 
@@ -657,6 +659,73 @@ export async function getStreamIdsByChatId({ chatId }: { chatId: string }) {
 // SAIRPG Event Log Queries
 // =============================================================================
 
+export async function getEventsByGame({
+  gameId,
+  limit = 100,
+  offset = 0,
+  eventType,
+  moduleName,
+}: {
+  gameId: string;
+  limit?: number;
+  offset?: number;
+  eventType?: string;
+  moduleName?: string;
+}) {
+  try {
+    const conditions: SQL<any>[] = [
+      eq(eventLog.gameId, gameId),
+      sql`${eventLog.saveId} IS NULL`, // Only live events
+    ];
+    
+    if (eventType) {
+      conditions.push(eq(eventLog.eventType, eventType));
+    }
+    if (moduleName) {
+      conditions.push(eq(eventLog.moduleName, moduleName));
+    }
+
+    return await db
+      .select()
+      .from(eventLog)
+      .where(and(...conditions))
+      .orderBy(desc(eventLog.createdAt))
+      .limit(limit)
+      .offset(offset);
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get events by game"
+    );
+  }
+}
+
+export async function getEventsBySave({
+  saveId,
+  limit = 100,
+  offset = 0,
+}: {
+  saveId: string;
+  limit?: number;
+  offset?: number;
+}) {
+  try {
+    return await db
+      .select()
+      .from(eventLog)
+      .where(eq(eventLog.saveId, saveId))
+      .orderBy(desc(eventLog.createdAt))
+      .limit(limit)
+      .offset(offset);
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get events by save"
+    );
+  }
+}
+
+// Legacy function for backward compatibility
 export async function getEventLogs({
   sessionId,
   branchId,
@@ -672,44 +741,19 @@ export async function getEventLogs({
   eventType?: string;
   moduleName?: string;
 }) {
-  try {
-    const conditions: SQL<any>[] = [];
-    
-    if (sessionId) {
-      conditions.push(eq(eventLog.sessionId, sessionId));
-    }
-    if (branchId) {
-      conditions.push(eq(eventLog.branchId, branchId));
-    }
-    if (eventType) {
-      conditions.push(eq(eventLog.eventType, eventType));
-    }
-    if (moduleName) {
-      conditions.push(eq(eventLog.moduleName, moduleName));
-    }
-
-    const query = conditions.length > 0
-      ? db
-          .select()
-          .from(eventLog)
-          .where(and(...conditions))
-          .orderBy(desc(eventLog.createdAt))
-          .limit(limit)
-          .offset(offset)
-      : db
-          .select()
-          .from(eventLog)
-          .orderBy(desc(eventLog.createdAt))
-          .limit(limit)
-          .offset(offset);
-
-    return await query;
-  } catch (_error) {
-    throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to get event logs"
-    );
+  // Map old parameters to new function
+  if (sessionId) {
+    return getEventsByGame({
+      gameId: sessionId,
+      limit,
+      offset,
+      eventType,
+      moduleName,
+    });
   }
+  
+  // Fallback: return empty array if no gameId provided
+  return [];
 }
 
 export async function getChatCost(chatId: string) {
@@ -736,20 +780,21 @@ export async function getChatCost(chatId: string) {
 }
 
 export async function getEventLogCount({
-  sessionId,
-  branchId,
+  gameId,
+  saveId,
 }: {
-  sessionId?: string;
-  branchId?: string;
+  gameId?: string;
+  saveId?: string;
 }) {
   try {
     const conditions: SQL<any>[] = [];
     
-    if (sessionId) {
-      conditions.push(eq(eventLog.sessionId, sessionId));
+    if (gameId) {
+      conditions.push(eq(eventLog.gameId, gameId));
+      conditions.push(sql`${eventLog.saveId} IS NULL`); // Only live events
     }
-    if (branchId) {
-      conditions.push(eq(eventLog.branchId, branchId));
+    if (saveId) {
+      conditions.push(eq(eventLog.saveId, saveId));
     }
 
     const result = conditions.length > 0
@@ -768,6 +813,50 @@ export async function getEventLogCount({
   }
 }
 
+export async function createEvent({
+  gameId,
+  saveId,
+  sequenceNum,
+  eventType,
+  moduleName = "system",
+  actor = "system",
+  payload = {},
+  cost,
+}: {
+  gameId: string;
+  saveId?: string;
+  sequenceNum: string;
+  eventType: string;
+  moduleName?: string;
+  actor?: string;
+  payload?: Record<string, unknown>;
+  cost?: string; // Stored as text to match schema
+}) {
+  try {
+    const [newEvent] = await db
+      .insert(eventLog)
+      .values({
+        gameId,
+        saveId,
+        sequenceNum,
+        eventType,
+        moduleName,
+        actor,
+        payload,
+        cost,
+      })
+      .returning();
+
+    return newEvent;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      `Failed to create event: ${_error instanceof Error ? _error.message : String(_error)}`
+    );
+  }
+}
+
+// Legacy function for backward compatibility
 export async function createEventLog({
   sessionId,
   branchId,
@@ -789,36 +878,20 @@ export async function createEventLog({
   actor?: string;
   payload?: Record<string, unknown>;
   parentEventId?: string;
-  cost?: string; // Stored as text to match schema
+  cost?: string;
 }) {
-  try {
-    const [newEvent] = await db
-      .insert(eventLog)
-      .values({
-        sessionId,
-        branchId,
-        sequenceNum,
-        turnId,
-        eventType,
-        moduleName,
-        actor,
-        payload,
-        parentEventId,
-        validFromBranch: branchId,
-        cost,
-      })
-      .returning();
-
-    return newEvent;
-  } catch (_error) {
-    throw new ChatSDKError(
-      "bad_request:database",
-      `Failed to create event log: ${_error instanceof Error ? _error.message : String(_error)}`
-    );
-  }
+  return createEvent({
+    gameId: sessionId,
+    sequenceNum,
+    eventType,
+    moduleName,
+    actor,
+    payload,
+    cost,
+  });
 }
 
-export async function getGameSessions({ userId }: { userId: string }) {
+export async function getGames({ userId }: { userId: string }) {
   try {
     return await db
       .select()
@@ -828,22 +901,27 @@ export async function getGameSessions({ userId }: { userId: string }) {
   } catch (_error) {
     throw new ChatSDKError(
       "bad_request:database",
-      "Failed to get game sessions"
+      "Failed to get games"
     );
   }
 }
 
-export async function createGameSession({
+// Legacy function for backward compatibility
+export async function getGameSessions({ userId }: { userId: string }) {
+  return getGames({ userId });
+}
+
+export async function createGame({
   userId,
   title,
-  worldId,
+  chatId,
 }: {
   userId: string;
   title?: string;
-  worldId?: string;
+  chatId?: string;
 }) {
   try {
-    // Check if user exists before creating game session
+    // Check if user exists before creating game
     const [existingUser] = await db.select().from(user).where(eq(user.id, userId)).limit(1);
     
     if (!existingUser) {
@@ -853,22 +931,414 @@ export async function createGameSession({
       );
     }
 
-    const [newSession] = await db
+    // Set all other games to inactive
+    await db
+      .update(gameSession)
+      .set({ isActive: false })
+      .where(eq(gameSession.userId, userId));
+
+    const [newGame] = await db
       .insert(gameSession)
       .values({
         userId,
         title: title ?? "Untitled Adventure",
-        worldId,
+        chatId,
+        isActive: true,
       })
       .returning();
 
-    return newSession;
+    return newGame;
   } catch (_error) {
     throw new ChatSDKError(
       "bad_request:database",
-      `Failed to create game session: ${_error instanceof Error ? _error.message : String(_error)}`
+      `Failed to create game: ${_error instanceof Error ? _error.message : String(_error)}`
     );
   }
+}
+
+// Legacy function for backward compatibility
+export async function createGameSession({
+  userId,
+  title,
+  worldId,
+}: {
+  userId: string;
+  title?: string;
+  worldId?: string;
+}) {
+  return createGame({ userId, title });
+}
+
+// ============================================================================
+// Save System Queries
+// ============================================================================
+
+/**
+ * Get game by chatId (the active chat for this game)
+ */
+export async function getGameByChatId(
+  chatId: string
+): Promise<GameSession | null> {
+  try {
+    const [game] = await db
+      .select()
+      .from(gameSession)
+      .where(eq(gameSession.chatId, chatId))
+      .limit(1);
+
+    return game ?? null;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get game by chatId"
+    );
+  }
+}
+
+/**
+ * Get game by ID
+ */
+export async function getGameById(
+  gameId: string
+): Promise<GameSession | null> {
+  try {
+    const [game] = await db
+      .select()
+      .from(gameSession)
+      .where(eq(gameSession.id, gameId))
+      .limit(1);
+
+    return game ?? null;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get game by id"
+    );
+  }
+}
+
+/**
+ * Get active game for a user
+ */
+export async function getActiveGame(
+  userId: string
+): Promise<GameSession | null> {
+  try {
+    const [game] = await db
+      .select()
+      .from(gameSession)
+      .where(and(eq(gameSession.userId, userId), eq(gameSession.isActive, true)))
+      .limit(1);
+
+    return game ?? null;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get active game"
+    );
+  }
+}
+
+/**
+ * Set active game for a user
+ */
+export async function setActiveGame({
+  userId,
+  gameId,
+}: {
+  userId: string;
+  gameId: string;
+}): Promise<void> {
+  try {
+    // Set all games to inactive
+    await db
+      .update(gameSession)
+      .set({ isActive: false })
+      .where(eq(gameSession.userId, userId));
+
+    // Set the specified game to active
+    await db
+      .update(gameSession)
+      .set({ isActive: true, updatedAt: new Date() })
+      .where(eq(gameSession.id, gameId));
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to set active game"
+    );
+  }
+}
+
+/**
+ * Update game fields
+ */
+export async function updateGame({
+  gameId,
+  title,
+  chatId,
+}: {
+  gameId: string;
+  title?: string;
+  chatId?: string;
+}): Promise<GameSession> {
+  try {
+    const updateData: { title?: string; chatId?: string; updatedAt: Date } = {
+      updatedAt: new Date(),
+    };
+    if (title !== undefined) {
+      updateData.title = title;
+    }
+    if (chatId !== undefined) {
+      updateData.chatId = chatId;
+    }
+
+    const [updatedGame] = await db
+      .update(gameSession)
+      .set(updateData)
+      .where(eq(gameSession.id, gameId))
+      .returning();
+
+    if (!updatedGame) {
+      throw new ChatSDKError(
+        "not_found:database",
+        "Game not found"
+      );
+    }
+
+    return updatedGame;
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      throw error;
+    }
+    throw new ChatSDKError(
+      "bad_request:database",
+      `Failed to update game: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+/**
+ * Delete game and all associated data
+ */
+export async function deleteGame(gameId: string): Promise<void> {
+  try {
+    await db.delete(gameSession).where(eq(gameSession.id, gameId));
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to delete game"
+    );
+  }
+}
+
+// Legacy function for backward compatibility
+export async function getGameSessionByChatId(
+  chatId: string
+): Promise<GameSession | null> {
+  return getGameByChatId(chatId);
+}
+
+/**
+ * Get or create active game for a user
+ * Helper function for save/load operations
+ */
+export async function getOrCreateActiveGame(
+  userId: string
+): Promise<GameSession> {
+  const games = await getGames({ userId });
+  const activeGame = games.find((g) => g.isActive);
+
+  if (activeGame) {
+    return activeGame;
+  }
+
+  return createGame({
+    userId,
+    title: "New Adventure",
+  });
+}
+
+// Legacy function for backward compatibility
+export async function getOrCreateActiveGameSession(
+  userId: string
+): Promise<GameSession> {
+  return getOrCreateActiveGame(userId);
+}
+
+// Save Slot Queries
+export async function getSavesByGame(
+  gameId: string
+): Promise<SaveSlot[]> {
+  try {
+    return await db
+      .select()
+      .from(saveSlot)
+      .where(eq(saveSlot.gameId, gameId))
+      .orderBy(desc(saveSlot.createdAt));
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get saves by game"
+    );
+  }
+}
+
+export async function createSave(params: {
+  gameId: string;
+  chatId: string;
+  name: string;
+  turnNumber: string;
+  messageCount: string;
+  description?: string;
+}): Promise<SaveSlot> {
+  try {
+    const [newSave] = await db
+      .insert(saveSlot)
+      .values({
+        gameId: params.gameId,
+        chatId: params.chatId,
+        name: params.name,
+        turnNumber: params.turnNumber,
+        messageCount: params.messageCount,
+        description: params.description,
+      })
+      .returning();
+
+    return newSave;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      `Failed to create save: ${_error instanceof Error ? _error.message : String(_error)}`
+    );
+  }
+}
+
+/**
+ * Copy events to a save snapshot
+ */
+export async function copyEventsToSave({
+  gameId,
+  saveId,
+}: {
+  gameId: string;
+  saveId: string;
+}): Promise<void> {
+  try {
+    // Get all live events for this game
+    const liveEvents = await db
+      .select()
+      .from(eventLog)
+      .where(and(
+        eq(eventLog.gameId, gameId),
+        sql`${eventLog.saveId} IS NULL`
+      ));
+
+    // Copy each event with the saveId set
+    if (liveEvents.length > 0) {
+      const copiedEvents = liveEvents.map((event) => ({
+        gameId: event.gameId,
+        saveId,
+        sequenceNum: event.sequenceNum,
+        eventType: event.eventType,
+        moduleName: event.moduleName,
+        actor: event.actor,
+        payload: event.payload,
+        cost: event.cost,
+        createdAt: event.createdAt,
+      }));
+
+      await db.insert(eventLog).values(copiedEvents);
+    }
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      `Failed to copy events to save: ${_error instanceof Error ? _error.message : String(_error)}`
+    );
+  }
+}
+
+// Legacy function for backward compatibility
+export async function getSavesBySession(
+  sessionId: string
+): Promise<SaveSlot[]> {
+  return getSavesByGame(sessionId);
+}
+
+export async function deleteSave(saveId: string): Promise<void> {
+  try {
+    await db.delete(saveSlot).where(eq(saveSlot.id, saveId));
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to delete save"
+    );
+  }
+}
+
+export async function getSaveById(saveId: string): Promise<SaveSlot | null> {
+  try {
+    const [save] = await db
+      .select()
+      .from(saveSlot)
+      .where(eq(saveSlot.id, saveId))
+      .limit(1);
+
+    return save ?? null;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get save by id"
+    );
+  }
+}
+
+export async function updateSave(params: {
+  saveId: string;
+  name?: string;
+  description?: string;
+}): Promise<SaveSlot> {
+  try {
+    const updateData: { name?: string; description?: string } = {};
+    if (params.name !== undefined) {
+      updateData.name = params.name;
+    }
+    if (params.description !== undefined) {
+      updateData.description = params.description;
+    }
+
+    const [updatedSave] = await db
+      .update(saveSlot)
+      .set(updateData)
+      .where(eq(saveSlot.id, params.saveId))
+      .returning();
+
+    if (!updatedSave) {
+      throw new ChatSDKError(
+        "not_found:database",
+        "Save not found"
+      );
+    }
+
+    return updatedSave;
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      throw error;
+    }
+    throw new ChatSDKError(
+      "bad_request:database",
+      `Failed to update save: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+// Legacy turn number helper (now calculated from messages/events, not stored)
+export async function getCurrentTurnNumber(
+  gameId: string
+): Promise<number> {
+  // Turn number is now calculated from messages/events, not stored
+  // This function is kept for backward compatibility but returns 0
+  // The actual turn number should be calculated from message count or events
+  return 0;
 }
 
 // ============================================================================

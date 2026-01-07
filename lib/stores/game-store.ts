@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { ContextViewId } from "@/lib/constants/navigation";
 
 /**
  * Module IDs for the main navigation areas
@@ -12,6 +13,12 @@ export type ModuleId = "play" | "editor";
  * View IDs for context panes and sub-views
  */
 export type ViewId = "world" | "characters" | "items" | "settings";
+
+/**
+ * Context panel view IDs for the play module
+ * Re-exported from navigation constants for convenience
+ */
+export type { ContextViewId as ContextPanelView } from "@/lib/constants/navigation";
 
 interface GameState {
   // Sidebar state
@@ -37,6 +44,28 @@ interface GameState {
   activeContextView: ViewId | null;
   setActiveContextView: (view: ViewId | null) => void;
 
+  // Context panel view management (for play module)
+  contextPanelView: ContextViewId;
+  setContextPanelView: (view: ContextViewId) => void;
+
+  // Save dialog state
+  saveDialogOpen: boolean;
+  setSaveDialogOpen: (open: boolean) => void;
+
+  // Load confirmation dialog state
+  loadConfirmDialogOpen: boolean;
+  setLoadConfirmDialogOpen: (open: boolean) => void;
+  pendingLoadSaveId: string | null;
+  setPendingLoadSaveId: (id: string | null) => void;
+
+  // New game confirmation dialog state
+  newGameConfirmDialogOpen: boolean;
+  setNewGameConfirmDialogOpen: (open: boolean) => void;
+
+  // Navigate home confirmation dialog state
+  navigateHomeConfirmDialogOpen: boolean;
+  setNavigateHomeConfirmDialogOpen: (open: boolean) => void;
+
   // Current session tracking
   currentChatId: string | null;
   setCurrentChatId: (id: string | null) => void;
@@ -45,11 +74,6 @@ interface GameState {
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => {
-      // #region agent log
-      if (typeof window !== "undefined") {
-        fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'game-store.ts:45',message:'Store initialization',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'A'})}).catch(()=>{});
-      }
-      // #endregion
       return {
       // Sidebar state
       sidebarExpanded: false,
@@ -75,32 +99,37 @@ export const useGameStore = create<GameState>()(
       // Context pane
       contextPaneOpen: false,
       setContextPaneOpen: (open) => {
-        // #region agent log
-        if (typeof window !== "undefined") {
-          const currentState = get().contextPaneOpen;
-          fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'game-store.ts:71',message:'setContextPaneOpen called',data:{from:currentState,to:open},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
-        }
-        // #endregion
         set({ contextPaneOpen: open });
       },
       toggleContextPane: () => {
-        // #region agent log
-        if (typeof window !== "undefined") {
-          const currentState = get().contextPaneOpen;
-          fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'game-store.ts:73',message:'toggleContextPane called',data:{before:currentState},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
-        }
-        // #endregion
         set((state) => {
-          // #region agent log
-          if (typeof window !== "undefined") {
-            fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'game-store.ts:73',message:'toggleContextPane state update',data:{from:state.contextPaneOpen,to:!state.contextPaneOpen},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
-          }
-          // #endregion
           return { contextPaneOpen: !state.contextPaneOpen };
         });
       },
       activeContextView: null,
       setActiveContextView: (view) => set({ activeContextView: view }),
+
+      // Context panel view (for play module)
+      contextPanelView: "stats",
+      setContextPanelView: (view) => set({ contextPanelView: view }),
+
+      // Save dialog state
+      saveDialogOpen: false,
+      setSaveDialogOpen: (open) => set({ saveDialogOpen: open }),
+
+      // Load confirmation dialog state
+      loadConfirmDialogOpen: false,
+      setLoadConfirmDialogOpen: (open) => set({ loadConfirmDialogOpen: open }),
+      pendingLoadSaveId: null,
+      setPendingLoadSaveId: (id) => set({ pendingLoadSaveId: id }),
+
+      // New game confirmation dialog state
+      newGameConfirmDialogOpen: false,
+      setNewGameConfirmDialogOpen: (open) => set({ newGameConfirmDialogOpen: open }),
+
+      // Navigate home confirmation dialog state
+      navigateHomeConfirmDialogOpen: false,
+      setNavigateHomeConfirmDialogOpen: (open) => set({ navigateHomeConfirmDialogOpen: open }),
 
       // Current session
       currentChatId: null,
@@ -113,15 +142,12 @@ export const useGameStore = create<GameState>()(
         sidebarExpanded: state.sidebarExpanded,
         contextPaneOpen: state.contextPaneOpen,
         activeContextView: state.activeContextView,
+        contextPanelView: state.contextPanelView,
         selectedModule: state.selectedModule,
         rightPanelTab: state.rightPanelTab,
       }),
       onRehydrateStorage: () => (state) => {
-        // #region agent log
-        if (typeof window !== "undefined" && state) {
-          fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'game-store.ts:90',message:'onRehydrateStorage callback',data:{contextPaneOpen:state.contextPaneOpen},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'B'})}).catch(()=>{});
-        }
-        // #endregion
+        // Storage rehydrated
       },
     }
   )

@@ -1,11 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { memo } from "react";
 import { ContextPanelToggle } from "@/components/play/context-panel-toggle";
+import { SaveButton } from "@/components/play/save-button";
 import { Button } from "@/components/ui/button";
 import { PlusIcon } from "./icons";
 import { VisibilitySelector, type VisibilityType } from "./visibility-selector";
+import { useGameStore } from "@/lib/stores/game-store";
 
 function PureChatHeader({
   chatId,
@@ -16,7 +17,7 @@ function PureChatHeader({
   selectedVisibilityType: VisibilityType;
   isReadonly: boolean;
 }) {
-  const router = useRouter();
+  const setNewGameConfirmDialogOpen = useGameStore((s) => s.setNewGameConfirmDialogOpen);
 
   return (
     <header className="sticky top-0 flex items-center gap-2 bg-background px-2 py-1.5 md:px-2">
@@ -25,12 +26,8 @@ function PureChatHeader({
       <Button
         className="order-2 ml-auto h-8 px-2 md:order-1 md:ml-0 md:h-fit md:px-2"
         onClick={() => {
-          // Clear cached input for fresh start
-          localStorage.removeItem("input");
-          // Clear last-play-id cookie
-          document.cookie = "last-play-id=; path=/; max-age=0";
-          router.push("/play?new=true");
-          router.refresh();
+          // Show confirmation dialog (we're already on a play page with a chatId)
+          setNewGameConfirmDialogOpen(true);
         }}
         variant="outline"
       >
@@ -44,6 +41,12 @@ function PureChatHeader({
           className="order-1 md:order-2"
           selectedVisibilityType={selectedVisibilityType}
         />
+      )}
+
+      {!isReadonly && (
+        <div className="order-3 ml-auto hidden md:flex">
+          <SaveButton chatId={chatId} />
+        </div>
       )}
     </header>
   );

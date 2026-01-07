@@ -36,12 +36,19 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { useGameStore } from "@/lib/stores/game-store";
+import { usePathname } from "next/navigation";
 
 export function AppSidebar({ user }: { user: User | undefined }) {
   const { setOpenMobile } = useSidebar();
   const { mutate } = useSWRConfig();
   const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
+  const currentChatId = useGameStore((s) => s.currentChatId);
+  const setNewGameConfirmDialogOpen = useGameStore((s) => s.setNewGameConfirmDialogOpen);
+  const setNavigateHomeConfirmDialogOpen = useGameStore((s) => s.setNavigateHomeConfirmDialogOpen);
+  const isOnPlayPage = pathname.startsWith("/play");
 
   const handleDeleteAll = () => {
     const deletePromise = fetch("/api/history", {
@@ -70,8 +77,16 @@ export function AppSidebar({ user }: { user: User | undefined }) {
               <Link
                 className="flex flex-row items-center gap-3"
                 href="/"
-                onClick={() => {
-                  setOpenMobile(false);
+                onClick={(e) => {
+                  // If there's an active game session, show confirmation (regardless of current page)
+                  if (currentChatId) {
+                    e.preventDefault();
+                    setOpenMobile(false);
+                    setNavigateHomeConfirmDialogOpen(true);
+                  } else {
+                    // Otherwise, allow normal navigation
+                    setOpenMobile(false);
+                  }
                 }}
               >
                 <span className="cursor-pointer rounded-md px-2 font-semibold text-lg hover:bg-muted">
@@ -101,13 +116,17 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                     <Button
                       className="h-8 p-1 md:h-fit md:p-2"
                       onClick={() => {
-                        // Clear cached input for fresh start
-                        localStorage.removeItem("input");
-                        // Clear last-play-id cookie
-                        document.cookie = "last-play-id=; path=/; max-age=0";
                         setOpenMobile(false);
-                        router.push("/play?new=true");
-                        router.refresh();
+                        // If there's an active game session, show confirmation dialog
+                        if (currentChatId) {
+                          setNewGameConfirmDialogOpen(true);
+                        } else {
+                          // No active game, just start new one directly
+                          localStorage.removeItem("input");
+                          document.cookie = "last-play-id=; path=/; max-age=0";
+                          router.push("/play?new=true");
+                          router.refresh();
+                        }
                       }}
                       type="button"
                       variant="ghost"

@@ -11,8 +11,8 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get("sessionId") ?? undefined;
-    const branchId = searchParams.get("branchId") ?? undefined;
+    // Accept gameId (new) or sessionId (legacy) for backward compatibility
+    const gameId = searchParams.get("gameId") ?? searchParams.get("sessionId") ?? undefined;
     const eventType = searchParams.get("eventType") ?? undefined;
     const moduleName = searchParams.get("moduleName") ?? undefined;
     const limit = parseInt(searchParams.get("limit") ?? "50", 10);
@@ -20,14 +20,13 @@ export async function GET(request: Request) {
 
     const [events, totalCount] = await Promise.all([
       getEventLogs({
-        sessionId,
-        branchId,
+        sessionId: gameId, // getEventLogs maps sessionId to gameId internally
         eventType,
         moduleName,
         limit,
         offset,
       }),
-      getEventLogCount({ sessionId, branchId }),
+      getEventLogCount({ gameId }),
     ]);
 
     return NextResponse.json({

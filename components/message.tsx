@@ -53,6 +53,34 @@ const PurePreviewMessage = ({
 
   useDataStream();
 
+  // System messages have a simpler layout
+  if (message.role === "system") {
+    return (
+      <div
+        className="group/message fade-in w-full animate-in duration-200"
+        data-role={message.role}
+        data-testid={`message-${message.role}`}
+      >
+        <div className="flex w-full justify-center">
+          {message.parts?.map((part, index) => {
+            if (part.type === "text") {
+              return (
+                <div
+                  key={`message-${message.id}-part-${index}`}
+                  className="mx-auto flex max-w-md items-center justify-center rounded-lg border border-border/50 bg-muted/30 px-4 py-2 text-center text-muted-foreground text-sm"
+                  data-testid="system-message"
+                >
+                  {sanitizeText(part.text)}
+                </div>
+              );
+            }
+            return null;
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="group/message fade-in w-full animate-in duration-200"
@@ -342,7 +370,7 @@ const PurePreviewMessage = ({
             return null;
           })}
 
-          {!isReadonly && (
+          {!isReadonly && message.role !== "system" && (
             <MessageActions
               chatId={chatId}
               isLoading={isLoading}
