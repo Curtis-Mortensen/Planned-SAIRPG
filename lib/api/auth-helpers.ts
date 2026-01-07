@@ -3,21 +3,42 @@ import { auth } from "@/app/(auth)/auth";
 import { ChatSDKError } from "@/lib/errors";
 
 /**
+ * Session with guaranteed user.id property
+ */
+export type AuthenticatedSession = Session & {
+  user: {
+    id: string;
+  } & Session["user"];
+};
+
+/**
+ * Valid resource types for authorization checks
+ */
+export type ResourceType =
+  | "api"
+  | "chat"
+  | "document"
+  | "vote"
+  | "suggestions"
+  | "resource";
+
+/**
  * Authenticates the user and returns the session.
  * Returns an error response if authentication fails.
  */
 export async function authenticateUser(): Promise<
-  { session: Session; error?: never } | { session?: never; error: Response }
+  | { session: AuthenticatedSession; error?: never }
+  | { session?: never; error: Response }
 > {
   const session = await auth();
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return {
       error: new ChatSDKError("unauthorized:api").toResponse(),
     };
   }
 
-  return { session };
+  return { session: session as AuthenticatedSession };
 }
 
 /**
@@ -25,10 +46,12 @@ export async function authenticateUser(): Promise<
  * Returns an error response if validation fails.
  */
 export function authorizeResourceAccess(
-  resourceUserId: string | undefined | null,
+  resourceUserId: string | null | undefined,
   sessionUserId: string,
-  resourceType: string = "resource"
-): { authorized: true; error?: never } | { authorized: false; error: Response } {
+  resourceType: ResourceType = "resource"
+):
+  | { authorized: true; error?: never }
+  | { authorized: false; error: Response } {
   if (!resourceUserId) {
     return {
       authorized: false,

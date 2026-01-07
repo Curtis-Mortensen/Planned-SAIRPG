@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
   const { authorized, error: authzError } = authorizeResourceAccess(
     chat?.userId,
-    session.user.id!,
+    session.user.id,
     "vote"
   );
   if (!authorized) return authzError;
@@ -51,7 +51,7 @@ export async function PATCH(request: Request) {
 
   const { authorized, error: authzError } = authorizeResourceAccess(
     chat?.userId,
-    session.user.id!,
+    session.user.id,
     "vote"
   );
   if (!authorized) return authzError;

@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
   const { authorized, error: authzError } = authorizeResourceAccess(
     document?.userId,
-    session.user.id!,
+    session.user.id,
     "document"
   );
   if (!authorized) return authzError;
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 
     const { authorized, error: authzError } = authorizeResourceAccess(
       doc.userId,
-      session.user.id!,
+      session.user.id,
       "document"
     );
     if (!authorized) return authzError;
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     content,
     title,
     kind,
-    userId: session.user.id!,
+    userId: session.user.id,
   });
 
   return Response.json(document, { status: 200 });
@@ -94,7 +94,7 @@ export async function DELETE(request: Request) {
 
   const { authorized, error: authzError } = authorizeResourceAccess(
     document?.userId,
-    session.user.id!,
+    session.user.id,
     "document"
   );
   if (!authorized) return authzError;

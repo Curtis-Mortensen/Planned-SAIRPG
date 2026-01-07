@@ -41,16 +41,20 @@ export function AuthPage({ config }: { config: AuthPageConfig }) {
 
   const { update: updateSession } = useSession();
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: router and updateSession are stable refs
   useEffect(() => {
+    // Call the status change handler
     config.onStatusChange(state.status);
 
+    // Handle success state
     if (state.status === "success") {
       setIsSuccessful(true);
       updateSession();
       router.refresh();
     }
-  }, [state.status]);
+    // Router and updateSession are stable refs, config.onStatusChange is recreated on each render
+    // but that's acceptable as it's a simple callback that handles toast notifications
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.status, router, updateSession]);
 
   const handleSubmit = (formData: FormData) => {
     setEmail(formData.get("email") as string);

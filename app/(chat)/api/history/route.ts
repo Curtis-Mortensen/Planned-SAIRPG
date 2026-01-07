@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   if (authError) return authError;
 
   const chats = await getChatsByUserId({
-    id: session.user.id!,
+    id: session.user.id,
     limit,
     startingAfter,
     endingBefore,
@@ -34,7 +34,7 @@ export async function DELETE() {
   const { session, error: authError } = await authenticateUser();
   if (authError) return authError;
 
-  const result = await deleteAllChatsByUserId({ userId: session.user.id! });
+  const result = await deleteAllChatsByUserId({ userId: session.user.id });
 
   return Response.json(result, { status: 200 });
 }

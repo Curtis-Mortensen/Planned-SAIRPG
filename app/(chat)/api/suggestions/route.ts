@@ -28,7 +28,7 @@ export async function GET(request: Request) {
 
   const { authorized, error: authzError } = authorizeResourceAccess(
     suggestion.userId,
-    session.user.id!,
+    session.user.id,
     "api"
   );
   if (!authorized) return authzError;
