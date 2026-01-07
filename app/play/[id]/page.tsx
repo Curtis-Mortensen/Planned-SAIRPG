@@ -9,12 +9,13 @@ import { getChatById, getMessagesByChatId, getPromptByModule, getGameByChatId, s
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
 import { createSystemMessage } from "@/lib/system-messages";
 import type { ChatMessage } from "@/lib/types";
+import { ChatPageSkeleton } from "@/components/loading-skeletons";
 
 export default function PlaySessionPage(props: {
   params: Promise<{ id: string }>;
 }) {
   return (
-    <Suspense fallback={<div className="flex h-dvh" />}>
+    <Suspense fallback={<ChatPageSkeleton />}>
       <GameSessionPage params={props.params} />
     </Suspense>
   );

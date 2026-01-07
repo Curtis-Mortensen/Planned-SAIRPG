@@ -4,10 +4,11 @@ import { Chat } from "@/components/chat";
 import { DataStreamHandler } from "@/components/data-stream-handler";
 import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import { generateUUID } from "@/lib/utils";
+import { ChatPageSkeleton } from "@/components/loading-skeletons";
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="flex h-dvh" />}>
+    <Suspense fallback={<ChatPageSkeleton />}>
       <NewChatPage />
     </Suspense>
   );
