@@ -159,10 +159,16 @@ export async function POST(request: Request) {
     if (game && message?.role === "user") {
       const { getCurrentGamePhase, getActivePendingAction } = await import("@/lib/db/queries");
       const { isPhaseBlocking } = await import("@/lib/game-state/state-machine");
+      const { GAME_PHASES } = await import("@/lib/game-state/types");
       
       const currentPhase = await getCurrentGamePhase(game.id);
       
-      if (isPhaseBlocking(currentPhase)) {
+      // Type guard to ensure currentPhase is a valid GamePhase
+      const isValidPhase = (phase: string): phase is typeof GAME_PHASES[number] => {
+        return GAME_PHASES.includes(phase as any);
+      };
+      
+      if (isValidPhase(currentPhase) && isPhaseBlocking(currentPhase)) {
         return Response.json(
           { 
             error: true, 
