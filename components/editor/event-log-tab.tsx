@@ -16,35 +16,17 @@ export function EventLogTab() {
   const fetchEvents = async () => {
     setIsLoading(true);
     setError(null);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event-log-tab.tsx:16',message:'fetchEvents called',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event-log-tab.tsx:20',message:'Before fetch request',data:{url:'/api/event-log?limit=100'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       const response = await fetch("/api/event-log?limit=100");
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event-log-tab.tsx:22',message:'After fetch response',data:{ok:response.ok,status:response.status,statusText:response.statusText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       
       if (!response.ok) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event-log-tab.tsx:25',message:'Response not ok',data:{status:response.status,statusText:response.statusText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         throw new Error("Failed to fetch event logs");
       }
 
       const data = await response.json();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event-log-tab.tsx:30',message:'Successfully parsed response',data:{eventsCount:data.events?.length??0,totalCount:data.pagination?.total??0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       setEvents(data.events ?? []);
       setTotalCount(data.pagination?.total ?? 0);
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'event-log-tab.tsx:33',message:'Error caught in fetchEvents',data:{errorType:err instanceof Error ? err.constructor.name : typeof err,errorMessage:err instanceof Error ? err.message : String(err),isNetworkError:err instanceof TypeError && err.message.includes('fetch')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       setError(err instanceof Error ? err.message : "An error occurred");
       console.error("Error fetching event logs:", err);
     } finally {

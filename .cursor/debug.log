@@ -1,0 +1,47 @@
+{"location":"game-store.ts:90","message":"onRehydrateStorage callback","data":{"contextPaneOpen":true},"timestamp":1767762875312,"sessionId":"debug-session","runId":"initial","hypothesisId":"B"}
+{"location":"game-store.ts:45","message":"Store initialization","data":{"timestamp":1767762875306},"timestamp":1767762875306,"sessionId":"debug-session","runId":"initial","hypothesisId":"A"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767762876931,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767762876968,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767762901070,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":true},"timestamp":1767762901089,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":true},"timestamp":1767762901074,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":true},"timestamp":1767762901091,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"context-panel-toggle.tsx:22","message":"Button onClick triggered","data":{"contextPaneOpenBefore":true},"timestamp":1767762908056,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"game-store.ts:73","message":"toggleContextPane called","data":{"before":true},"timestamp":1767762908057,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"context-panel-toggle.tsx:15","message":"ContextPanelToggle render","data":{"contextPaneOpen":false},"timestamp":1767762908079,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"game-store.ts:73","message":"toggleContextPane state update","data":{"from":true,"to":false},"timestamp":1767762908058,"sessionId":"debug-session","runId":"initial","hypothesisId":"C"}
+{"location":"context-panel.tsx:18","message":"ContextPanel render","data":{"contextPaneOpen":false},"timestamp":1767762908080,"sessionId":"debug-session","runId":"initial","hypothesisId":"D"}
+{"location":"event-log-tab.tsx:16","message":"fetchEvents called","data":{"timestamp":1767762908468},"timestamp":1767762908468,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}
+{"location":"event-log-tab.tsx:20","message":"Before fetch request","data":{"url":"/api/event-log?limit=100"},"timestamp":1767762908469,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}
+{"location":"event-log-tab.tsx:16","message":"fetchEvents called","data":{"timestamp":1767762908474},"timestamp":1767762908474,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}
+{"location":"event-log-tab.tsx:20","message":"Before fetch request","data":{"url":"/api/event-log?limit=100"},"timestamp":1767762908475,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}
+{"location":"route.ts:5","message":"API route handler called","data":{"url":"http://localhost:3000/api/event-log?limit=100"},"timestamp":1767762910283,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}
+{"location":"route.ts:7","message":"Auth check result","data":{"hasSession":true,"hasUserId":true,"userId":"2b495170-ee61-45d1-936a-b451f9c74bdc"},"timestamp":1767762910306,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"route.ts:20","message":"Before database queries","data":{"limit":100,"offset":0},"timestamp":1767762910312,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:660","message":"getEventLogs called","data":{"limit":100,"offset":0},"timestamp":1767762910319,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:738","message":"getEventLogCount called","data":{},"timestamp":1767762910321,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:691","message":"Before database query execution","data":{"conditionsCount":0,"hasPostgresUrl":true},"timestamp":1767762910328,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:755","message":"Before count query execution","data":{"conditionsCount":0},"timestamp":1767762910332,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:706","message":"Database query completed successfully","data":{"resultCount":21},"timestamp":1767762910342,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:762","message":"Count query completed successfully","data":{"count":21},"timestamp":1767762910368,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"route.ts:32","message":"Database queries completed","data":{"eventsCount":21,"totalCount":21},"timestamp":1767762910373,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"event-log-tab.tsx:22","message":"After fetch response","data":{"ok":true,"status":200,"statusText":"OK"},"timestamp":1767762909819,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}
+{"location":"event-log-tab.tsx:30","message":"Successfully parsed response","data":{"eventsCount":21,"totalCount":21},"timestamp":1767762909821,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}
+{"location":"route.ts:5","message":"API route handler called","data":{"url":"http://localhost:3000/api/event-log?limit=100"},"timestamp":1767762910417,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}
+{"location":"route.ts:7","message":"Auth check result","data":{"hasSession":true,"hasUserId":true,"userId":"2b495170-ee61-45d1-936a-b451f9c74bdc"},"timestamp":1767762910433,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"location":"route.ts:20","message":"Before database queries","data":{"limit":100,"offset":0},"timestamp":1767762910440,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:660","message":"getEventLogs called","data":{"limit":100,"offset":0},"timestamp":1767762910445,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:738","message":"getEventLogCount called","data":{},"timestamp":1767762910446,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:691","message":"Before database query execution","data":{"conditionsCount":0,"hasPostgresUrl":true},"timestamp":1767762910453,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:755","message":"Before count query execution","data":{"conditionsCount":0},"timestamp":1767762910457,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:762","message":"Count query completed successfully","data":{"count":21},"timestamp":1767762910465,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:706","message":"Database query completed successfully","data":{"resultCount":21},"timestamp":1767762910468,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"route.ts:32","message":"Database queries completed","data":{"eventsCount":21,"totalCount":21},"timestamp":1767762910473,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"event-log-tab.tsx:22","message":"After fetch response","data":{"ok":true,"status":200,"statusText":"OK"},"timestamp":1767762909925,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}
+{"location":"event-log-tab.tsx:30","message":"Successfully parsed response","data":{"eventsCount":21,"totalCount":21},"timestamp":1767762909931,"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}
+{"location":"queries.ts:738","message":"getEventLogCount called","data":{},"timestamp":1767762944555,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:755","message":"Before count query execution","data":{"conditionsCount":0},"timestamp":1767762944574,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:762","message":"Count query completed successfully","data":{"count":21},"timestamp":1767762944661,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:738","message":"getEventLogCount called","data":{},"timestamp":1767762944720,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:755","message":"Before count query execution","data":{"conditionsCount":0},"timestamp":1767762944726,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"location":"queries.ts:762","message":"Count query completed successfully","data":{"count":21},"timestamp":1767762944736,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}

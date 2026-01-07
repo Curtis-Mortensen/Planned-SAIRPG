@@ -53,8 +53,8 @@ export default async function SettingsPage() {
                   ) : (
                     <Avatar className="h-20 w-20">
                       <AvatarImage 
-                        src="https://i.imgflip.com/30b1gx.jpg" 
-                        alt="Morty Smith wearing sunglasses" 
+                        src="https://github.com/shadcn.png" 
+                        alt="@shadcn" 
                       />
                       <AvatarFallback>{session.user.name?.[0] || "M"}</AvatarFallback>
                     </Avatar>
