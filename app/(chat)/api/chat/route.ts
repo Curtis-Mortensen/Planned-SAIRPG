@@ -152,6 +152,56 @@ export async function POST(request: Request) {
       titlePromise = generateTitleFromUserMessage({ message });
     }
 
+    // =========================================================================
+    // PHASE GATE: Check if the game is in a blocking phase
+    // =========================================================================
+    const game = await getGameByChatId(id);
+    if (game && message?.role === "user") {
+      const { getCurrentGamePhase, getActivePendingAction } = await import("@/lib/db/queries");
+      const { isPhaseBlocking } = await import("@/lib/game-state/state-machine");
+      
+      const currentPhase = await getCurrentGamePhase(game.id);
+      
+      if (isPhaseBlocking(currentPhase)) {
+        return Response.json(
+          { 
+            error: true, 
+            errorCode: "PHASE_BLOCKED",
+            errorMessage: "Please wait while processing...",
+            currentPhase,
+          },
+          { status: 409 } // Conflict
+        );
+      }
+
+      // If in meta_review phase, don't process as normal chat
+      // The review UI handles this separately
+      if (currentPhase === "meta_review") {
+        const activePendingAction = await getActivePendingAction(game.id);
+        return Response.json(
+          {
+            error: true,
+            errorCode: "IN_META_REVIEW",
+            errorMessage: "Please review the proposed events first.",
+            pendingActionId: activePendingAction?.id,
+          },
+          { status: 409 }
+        );
+      }
+
+      // If in_meta_event, we process but with different context
+      // (The narrator knows we're resolving an event, not starting fresh)
+      // Store this in a variable for later use in building the narrator context
+      const routeContext = {
+        inMetaEvent: currentPhase === "in_meta_event",
+        pendingActionId: (await getActivePendingAction(game.id))?.id ?? null,
+      };
+      
+      // Note: routeContext will be used when building the Narrator Context
+      // For now, we continue with normal processing
+    }
+    // =========================================================================
+
     // Check if this is the first user message (new game)
     const isFirstUserMessage = !isToolApprovalFlow && 
       message?.role === "user" && 

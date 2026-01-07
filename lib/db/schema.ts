@@ -2,9 +2,13 @@ import type { InferSelectModel } from "drizzle-orm";
 import {
   boolean,
   foreignKey,
+  index,
+  integer,
   json,
+  pgEnum,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
   uuid,
@@ -260,3 +264,90 @@ export const saveSlot = pgTable("SaveSlot", {
 });
 
 export type SaveSlot = InferSelectModel<typeof saveSlot>;
+
+// =============================================================================
+// GAME PHASE STATE MACHINE
+// =============================================================================
+
+export const gamePhaseEnum = pgEnum("game_phase", [
+  "idle",
+  "validating",
+  "meta_proposal", 
+  "meta_review",
+  "probability_roll",
+  "in_meta_event",
+  "in_combat",
+  "resolving_action",
+]);
+
+export const metaEventTypeEnum = pgEnum("meta_event_type", [
+  "encounter",
+  "discovery",
+  "hazard",
+  "opportunity",
+]);
+
+export const severityLevelEnum = pgEnum("severity_level", [
+  "minor",
+  "moderate",
+  "major",
+]);
+
+export const playerDecisionEnum = pgEnum("player_decision", [
+  "accepted",
+  "rejected",
+]);
+
+export const pendingAction = pgTable(
+  "PendingAction",
+  {
+    id: uuid("id").primaryKey().notNull().defaultRandom(),
+    gameId: uuid("gameId")
+      .notNull()
+      .references(() => gameSession.id, { onDelete: "cascade" }),
+    chatId: uuid("chatId")
+      .notNull()
+      .references(() => chat.id, { onDelete: "cascade" }),
+    originalInput: text("originalInput").notNull(),
+    timeEstimate: varchar("timeEstimate", { length: 50 }),
+    phase: gamePhaseEnum("phase").notNull().default("validating"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+    completedAt: timestamp("completedAt"),
+  },
+  (table) => [
+    index("PendingAction_gameId_idx").on(table.gameId),
+    index("PendingAction_chatId_idx").on(table.chatId),
+    index("PendingAction_phase_idx").on(table.phase),
+  ]
+);
+
+export type PendingAction = InferSelectModel<typeof pendingAction>;
+
+export const metaEvent = pgTable(
+  "MetaEvent",
+  {
+    id: uuid("id").primaryKey().notNull().defaultRandom(),
+    pendingActionId: uuid("pendingActionId")
+      .notNull()
+      .references(() => pendingAction.id, { onDelete: "cascade" }),
+    sequenceNum: integer("sequenceNum").notNull().default(0),
+    type: metaEventTypeEnum("type").notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    description: text("description").notNull(),
+    probability: real("probability").notNull(),
+    severity: severityLevelEnum("severity").notNull(),
+    triggersCombat: boolean("triggersCombat").notNull().default(false),
+    timeImpact: varchar("timeImpact", { length: 50 }),
+    playerDecision: playerDecisionEnum("playerDecision"),
+    rollResult: real("rollResult"),
+    triggered: boolean("triggered"),
+    resolvedAt: timestamp("resolvedAt"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (table) => [
+    index("MetaEvent_pendingActionId_idx").on(table.pendingActionId),
+  ]
+);
+
+export type MetaEvent = InferSelectModel<typeof metaEvent>;
