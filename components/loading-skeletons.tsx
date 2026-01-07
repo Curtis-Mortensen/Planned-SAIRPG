@@ -1,5 +1,8 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
+// Constants
+const SIDEBAR_SKELETON_ITEMS = 8;
+
 /**
  * Loading skeleton for the landing page
  */
@@ -164,7 +167,7 @@ export function AppShellSkeleton() {
           <Skeleton className="h-10 w-full rounded-md" />
         </div>
         <div className="flex-1 space-y-2 p-2">
-          {Array.from({ length: 8 }).map((_, i) => (
+          {Array.from({ length: SIDEBAR_SKELETON_ITEMS }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full rounded-md" />
           ))}
         </div>
