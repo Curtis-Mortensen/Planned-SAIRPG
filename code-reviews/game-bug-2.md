@@ -80,7 +80,11 @@ Start a new game → should see opening scene + suggested actions
 Play a bit, then save → save should appear in the Saves panel
 Go to World Editor → Events tab → should show events for the active game
 
-Now I see the bug! When navigating to /play (or /play?new=true), the code generates a fresh UUID and redirects to /play/${id} - but no chat exists for this UUID. Then when page.tsx tries to call createGame with that chatId, the database throws a foreign key constraint error because the chat doesn't exist.
-The fix is to create the chat first in /app/play/[id]/page.tsx when it doesn't exist. Let me fix this:
+The fix is complete. Here's what was happening:
+Root Cause:
+When navigating to /play (or /play?new=true), the code in /app/play/page.tsx generates a fresh UUID and redirects to /play/${id}. However, no chat exists in the database for this UUID.
+Then in /app/play/[id]/page.tsx, when detecting it's a new game and no game exists for that chatId, the code tried to call createGame with a chatId that doesn't have a corresponding Chat record in the database. This violated the foreign key constraint on the GameSession.chatId column which references Chat.id.
+The Fix:
+I modified /app/play/[id]/page.tsx to create the chat first (using saveChat) before creating the game when the chat doesn't exist:
 
-Now let me also fix the second place in the file where createGame is called (for existing chats that don't have a game):
+Oh yeah
