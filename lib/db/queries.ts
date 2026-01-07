@@ -672,6 +672,9 @@ export async function getEventLogs({
   eventType?: string;
   moduleName?: string;
 }) {
+  // #region agent log
+  await fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'queries.ts:660',message:'getEventLogs called',data:{sessionId,branchId,limit,offset,eventType,moduleName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   try {
     const conditions: SQL<any>[] = [];
     
@@ -688,6 +691,10 @@ export async function getEventLogs({
       conditions.push(eq(eventLog.moduleName, moduleName));
     }
 
+    // #region agent log
+    await fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'queries.ts:691',message:'Before database query execution',data:{conditionsCount:conditions.length,hasPostgresUrl:!!process.env.POSTGRES_URL},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+
     const query = conditions.length > 0
       ? db
           .select()
@@ -703,8 +710,15 @@ export async function getEventLogs({
           .limit(limit)
           .offset(offset);
 
-    return await query;
+    const result = await query;
+    // #region agent log
+    await fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'queries.ts:706',message:'Database query completed successfully',data:{resultCount:result.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    return result;
   } catch (_error) {
+    // #region agent log
+    await fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'queries.ts:708',message:'Database query failed',data:{errorType:_error instanceof Error ? _error.constructor.name : typeof _error,errorMessage:_error instanceof Error ? _error.message : String(_error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to get event logs"
@@ -742,6 +756,9 @@ export async function getEventLogCount({
   sessionId?: string;
   branchId?: string;
 }) {
+  // #region agent log
+  await fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'queries.ts:738',message:'getEventLogCount called',data:{sessionId,branchId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   try {
     const conditions: SQL<any>[] = [];
     
@@ -752,6 +769,10 @@ export async function getEventLogCount({
       conditions.push(eq(eventLog.branchId, branchId));
     }
 
+    // #region agent log
+    await fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'queries.ts:755',message:'Before count query execution',data:{conditionsCount:conditions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+
     const result = conditions.length > 0
       ? await db
           .select({ count: count() })
@@ -759,8 +780,14 @@ export async function getEventLogCount({
           .where(and(...conditions))
       : await db.select({ count: count() }).from(eventLog);
 
+    // #region agent log
+    await fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'queries.ts:762',message:'Count query completed successfully',data:{count:result[0]?.count??0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     return result[0]?.count ?? 0;
   } catch (_error) {
+    // #region agent log
+    await fetch('http://127.0.0.1:7242/ingest/46496f1f-bdea-4b20-8099-d4bdc456fe12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'queries.ts:764',message:'Count query failed',data:{errorType:_error instanceof Error ? _error.constructor.name : typeof _error,errorMessage:_error instanceof Error ? _error.message : String(_error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to get event log count"

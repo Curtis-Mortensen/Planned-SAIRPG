@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -21,15 +19,10 @@ services:
   inngest:
     image: inngest/inngest:latest
     container_name: ai-chatbot-inngest
+    entrypoint: ["inngest", "dev", "-u", "http://host.docker.internal:3000/api/inngest"]
     ports:
       - "8288:8288"
-    environment:
-      INNGEST_DEV: "true"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8288/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    restart: unless-stopped
 
 volumes:
   postgres_data:
