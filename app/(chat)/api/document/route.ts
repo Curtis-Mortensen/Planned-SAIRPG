@@ -1,4 +1,3 @@
-import { auth } from "@/app/(auth)/auth";
 import type { ArtifactKind } from "@/components/artifact";
 import {
   deleteDocumentsByIdAfterTimestamp,
@@ -6,35 +5,31 @@ import {
   saveDocument,
 } from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
+import {
+  authenticateUser,
+  authorizeResourceAccess,
+  validateRequiredParams,
+} from "@/lib/api/auth-helpers";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 
-  if (!id) {
-    return new ChatSDKError(
-      "bad_request:api",
-      "Parameter id is missing"
-    ).toResponse();
-  }
+  const validation = validateRequiredParams({ id }, ["id"]);
+  if (!validation.valid) return validation.error;
 
-  const session = await auth();
+  const { session, error: authError } = await authenticateUser();
+  if (authError) return authError;
 
-  if (!session?.user) {
-    return new ChatSDKError("unauthorized:document").toResponse();
-  }
-
-  const documents = await getDocumentsById({ id });
-
+  const documents = await getDocumentsById({ id: id as string });
   const [document] = documents;
 
-  if (!document) {
-    return new ChatSDKError("not_found:document").toResponse();
-  }
-
-  if (document.userId !== session.user.id) {
-    return new ChatSDKError("forbidden:document").toResponse();
-  }
+  const { authorized, error: authzError } = authorizeResourceAccess(
+    document?.userId,
+    session.user.id!,
+    "document"
+  );
+  if (!authorized) return authzError;
 
   return Response.json(documents, { status: 200 });
 }
@@ -43,18 +38,11 @@ export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 
-  if (!id) {
-    return new ChatSDKError(
-      "bad_request:api",
-      "Parameter id is required."
-    ).toResponse();
-  }
+  const validation = validateRequiredParams({ id }, ["id"]);
+  if (!validation.valid) return validation.error;
 
-  const session = await auth();
-
-  if (!session?.user) {
-    return new ChatSDKError("not_found:document").toResponse();
-  }
+  const { session, error: authError } = await authenticateUser();
+  if (authError) return authError;
 
   const {
     content,
@@ -63,22 +51,25 @@ export async function POST(request: Request) {
   }: { content: string; title: string; kind: ArtifactKind } =
     await request.json();
 
-  const documents = await getDocumentsById({ id });
+  const documents = await getDocumentsById({ id: id as string });
 
   if (documents.length > 0) {
     const [doc] = documents;
 
-    if (doc.userId !== session.user.id) {
-      return new ChatSDKError("forbidden:document").toResponse();
-    }
+    const { authorized, error: authzError } = authorizeResourceAccess(
+      doc.userId,
+      session.user.id!,
+      "document"
+    );
+    if (!authorized) return authzError;
   }
 
   const document = await saveDocument({
-    id,
+    id: id as string,
     content,
     title,
     kind,
-    userId: session.user.id,
+    userId: session.user.id!,
   });
 
   return Response.json(document, { status: 200 });
@@ -89,37 +80,28 @@ export async function DELETE(request: Request) {
   const id = searchParams.get("id");
   const timestamp = searchParams.get("timestamp");
 
-  if (!id) {
-    return new ChatSDKError(
-      "bad_request:api",
-      "Parameter id is required."
-    ).toResponse();
-  }
+  const validation = validateRequiredParams(
+    { id, timestamp },
+    ["id", "timestamp"]
+  );
+  if (!validation.valid) return validation.error;
 
-  if (!timestamp) {
-    return new ChatSDKError(
-      "bad_request:api",
-      "Parameter timestamp is required."
-    ).toResponse();
-  }
+  const { session, error: authError } = await authenticateUser();
+  if (authError) return authError;
 
-  const session = await auth();
-
-  if (!session?.user) {
-    return new ChatSDKError("unauthorized:document").toResponse();
-  }
-
-  const documents = await getDocumentsById({ id });
-
+  const documents = await getDocumentsById({ id: id as string });
   const [document] = documents;
 
-  if (document.userId !== session.user.id) {
-    return new ChatSDKError("forbidden:document").toResponse();
-  }
+  const { authorized, error: authzError } = authorizeResourceAccess(
+    document?.userId,
+    session.user.id!,
+    "document"
+  );
+  if (!authorized) return authzError;
 
   const documentsDeleted = await deleteDocumentsByIdAfterTimestamp({
-    id,
-    timestamp: new Date(timestamp),
+    id: id as string,
+    timestamp: new Date(timestamp as string),
   });
 
   return Response.json(documentsDeleted, { status: 200 });
