@@ -1,3 +1,4 @@
+import { auth } from "@/app/(auth)/auth";
 import { getPromptByModule } from "@/lib/db/queries";
 import {
   NARRATOR_DEFAULT_PROMPT,
@@ -6,6 +7,15 @@ import {
 } from "@/lib/db/prompts/narrator-default";
 
 export async function GET(request: Request) {
+  // Require authentication to access prompts
+  const session = await auth();
+  if (!session?.user?.id) {
+    return Response.json(
+      { error: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   const moduleName = searchParams.get("module");
 
